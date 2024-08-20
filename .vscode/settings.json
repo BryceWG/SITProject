@@ -1,0 +1,11 @@
+{
+    "CodeGPT.apiKey": "OpenAI",
+    "CodeGPT.Autocomplete.suggestionDelay": 100,
+    "CodeGPT.Autocomplete.enabled": true,
+    "Codegeex.Chat.LanguagePreference": "中文",
+    "Codegeex.Comment.LanguagePreference": "中文",
+    "Codegeex.SidebarUI.LanguagePreference": "中文",
+    "Codegeex.CandidateNum": "1 (快)",
+    "Codegeex.CompletionModel": "CodeGeeX Pro[Beta]",
+    "Codegeex.CompletionDelay": 0.1
+}
