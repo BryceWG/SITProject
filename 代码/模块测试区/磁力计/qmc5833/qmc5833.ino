@@ -1,33 +1,37 @@
-#include <Arduino.h> 
-#include <SoftwareSerial.h>
-
-SoftwareSerial magnetometerSerial(2, 3); // RX, TX
+#include <Arduino.h>
+#include <HardwareSerial.h>
+// 定义日志前缀
+const unsigned long READ_DURATION = 1000; // 读取持续时间，单位毫秒
 
 void setup() {
   Serial.begin(115200);
-  magnetometerSerial.begin(9600);  // 使用磁力计的实际波特率
-  Serial.println("Magnetometer Test");
+  while (!Serial) delay(10);
+  Serial.println("磁力计原始数据测试开始...");
+  
+  Serial2.begin(460800); // 初始化Serial2，用于与磁力计通信
+  
+  delay(1000); // 等待磁力计初始化
 }
 
 void loop() {
-  if (magnetometerSerial.available() >= 6) {  // 假设每次读取6字节数据
-    int16_t x, y, z;
-    
-    // 读取X轴数据（假设为2字节）
-    x = magnetometerSerial.read() | (magnetometerSerial.read() << 8);
-    
-    // 读取Y轴数据（假设为2字节）
-    y = magnetometerSerial.read() | (magnetometerSerial.read() << 8);
-    
-    // 读取Z轴数据（假设为2字节）
-    z = magnetometerSerial.read() | (magnetometerSerial.read() << 8);
-    
-    // 打印解析后的数据
-    Serial.print("X: ");
-    Serial.print(x);
-    Serial.print(", Y: ");
-    Serial.print(y);
-    Serial.print(", Z: ");
-    Serial.println(z);
+  String rawData = "";
+  unsigned long startTime = millis();
+  
+  while (millis() - startTime < READ_DURATION) {
+    if (Serial2.available()) {
+      char c = Serial2.read();
+      rawData += c;
+    }
   }
+  
+  if (rawData.length() > 0) {
+    Serial.print("原始数据（");
+    Serial.print(READ_DURATION);
+    Serial.print("ms）: ");
+    Serial.println(rawData);
+  } else {
+    Serial.println("在指定时间内未收到数据");
+  }
+  
+  delay(100); // 短暂延迟，避免过于频繁的输出
 }
