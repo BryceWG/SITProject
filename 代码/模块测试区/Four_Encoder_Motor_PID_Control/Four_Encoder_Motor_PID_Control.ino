@@ -46,6 +46,8 @@ const String PREFIX_ERROR        = "5.ERROR: ";
 #define Trig 12 // 引脚Trig 连接 IO D2  
 #define Echo 13 // 引脚Echo 连接 IO D3
 
+#define BUTTON_PIN 30  // 按钮引脚，请根据实际情况修改
+
 MPU6050 mpu;   // 实例化MPU6050传感器对象
 Servo myServo; // 实例化舵机对象
 
@@ -164,6 +166,7 @@ void setup() // Arduino的setup函数，用于初始化
 
     mpuInit();  // 初始化MPU6050传感器
     ultrasonicInit();   // 初始化超声波传感器
+    pinMode(BUTTON_PIN, INPUT_PULLUP);  // 初始化按钮引脚，使用内部上拉
     myServo.write(90);  // 舵机转动到90度,具体角度待确定
     delay(200); // 延时200ms, 等待舵机转动到指定角度
 
@@ -192,6 +195,20 @@ void setup() // Arduino的setup函数，用于初始化
 
 void loop() 
 {
+    static bool buttonPressed = false;
+
+    if (!buttonPressed) {
+        // 检查按钮是否被按下
+        if (digitalRead(BUTTON_PIN) == LOW) {  // 按钮按下时电平为LOW
+            buttonPressed = true;
+            Serial.println("按钮已按下，小车开始运动");
+            delay(200);  // 消除按键抖动，延时200毫秒
+        } else {
+            // 按钮未按下，小车不进行任何操作
+            return;
+        }
+    }
+
     if (frontObstacle == 0 && distanceLimit == 0)    // 障碍物不存在且行驶距离未到达上限时，继续行驶
     {
         moveForward();  // 向前移动
