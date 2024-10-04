@@ -46,7 +46,7 @@ const String PREFIX_ERROR        = "5.ERROR: ";
 #define Trig 12 // 引脚Trig 连接 IO D2  
 #define Echo 13 // 引脚Echo 连接 IO D3
 
-#define BUTTON_PIN 30  // 按钮引脚，请根据实际情况修改
+#define BUTTON_PIN 10  // 按钮引脚，请根据实际情况修改
 
 MPU6050 mpu;   // 实例化MPU6050传感器对象
 Servo myServo; // 实例化舵机对象
@@ -201,7 +201,7 @@ void loop()
         // 检查按钮是否被按下
         if (digitalRead(BUTTON_PIN) == LOW) {  // 按钮按下时电平为LOW
             buttonPressed = true;
-            Serial.println("按钮已按下，小车开始运动");
+            Serial.println(PREFIX_SYSTEM + "按钮已按下，小车开始运动");
             delay(200);  // 消除按键抖动，延时200毫秒
         } else {
             // 按钮未按下，小车不进行任何操作
@@ -209,41 +209,44 @@ void loop()
         }
     }
 
-    if (frontObstacle == 0 && distanceLimit == 0)    // 障碍物不存在且行驶距离未到达上限时，继续行驶
+    if (buttonPressed)
     {
-        moveForward();  // 向前移动
-        Serial.println(PREFIX_MOVECONTROL + "Loop: Move Forward");
-    }
-    else if (distanceLimit == 1)   // 行驶距离到达上限
-    {
-        Serial.println(PREFIX_MOVECONTROL + "Loop: Distance Limit");
-        readUltrasonicStand();  // 静止时超声波扫描
-        distanceLimit = 0;  // 距离上限标志位清零
-        first_call = true;  // 第一次调用标志位清零
-    }
-    else if (frontObstacle == 1)   // 障碍物检测
-    {
-        Serial.println(PREFIX_MOVECONTROL + "Loop: Obstacle Detected"); 
-        obstacleDetectStand();      // 静止时障碍物检测
-        if (leftObstacle == 0)      // 左侧无障碍物
+        if (frontObstacle == 0 && distanceLimit == 0)    // 障碍物不存在且行驶距离未到达上限时，继续行驶
         {
-            Serial.println(PREFIX_MOVECONTROL + "Loop: Turn Left");
-            turn(-90);   // 左转
+            moveForward();  // 向前移动
+            Serial.println(PREFIX_MOVECONTROL + "Loop: Move Forward");
         }
-        else if (rightObstacle == 0 && leftObstacle == 1)   // 右侧无障碍物
+        else if (distanceLimit == 1)   // 行驶距离到达上限
         {
-            Serial.println(PREFIX_MOVECONTROL + "Loop: Turn Right");
-            turn(90);  // 右转
+            Serial.println(PREFIX_MOVECONTROL + "Loop: Distance Limit");
+            readUltrasonicStand();  // 静止时超声波扫描
+            distanceLimit = 0;  // 距离上限标志位清零
+            first_call = true;  // 第一次调用标志位清零
         }
-        else if (leftObstacle == 1 && rightObstacle == 1)   // 左右均有障碍物
+        else if (frontObstacle == 1)   // 障碍物检测
         {
-            Serial.println(PREFIX_MOVECONTROL + "Loop: Turn Around");
-            turn(180);  // 掉头
+            Serial.println(PREFIX_MOVECONTROL + "Loop: Obstacle Detected"); 
+            obstacleDetectStand();      // 静止时障碍物检测
+            if (leftObstacle == 0)      // 左侧无障碍物
+            {
+                Serial.println(PREFIX_MOVECONTROL + "Loop: Turn Left");
+                turn(-90);   // 左转
+            }
+            else if (rightObstacle == 0 && leftObstacle == 1)   // 右侧无障碍物
+            {
+                Serial.println(PREFIX_MOVECONTROL + "Loop: Turn Right");
+                turn(90);  // 右转
+            }
+            else if (leftObstacle == 1 && rightObstacle == 1)   // 左右均有障碍物
+            {
+                Serial.println(PREFIX_MOVECONTROL + "Loop: Turn Around");
+                turn(180);  // 掉头
+            }
+            readUltrasonicStand();  // 静止时超声波雷达扫描
+            frontObstacle = 0;      // 前方障碍物标志位清零
+            myServo.write(90);  // 舵机转动到90度,具体角度待确定
+            delay(100);
         }
-        readUltrasonicStand();  // 静止时超声波雷达扫描
-        frontObstacle = 0;      // 前方障碍物标志位清零
-        myServo.write(90);  // 舵机转动到90度,具体角度待确定
-        delay(100);
     }
 }
 
