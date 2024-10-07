@@ -1,6 +1,0 @@
-{
-    "port": "COM8",
-    "configuration": "cpu=atmega2560",
-    "board": "arduino:avr:mega",
-    "sketch": "Arduino超声波雷达扫描神器\\舵机测试代码\\test2\\test2.ino"
-}
