@@ -89,7 +89,7 @@ void readMagnetometerYaw() // 读取磁力计Yaw角数据
     int yawIndex = dataFromMagnetometer.indexOf("Yaw:");
     if (yawIndex != -1) 
     {
-        String yawString = dataFromMagnetometer.substring(yawIndex + 4);
+        String yawString = dataFromMagnetometer.substring(yawIndex + 5);
         yawString.trim();
         magYaw = yawString.toFloat();
 

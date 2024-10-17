@@ -65,7 +65,7 @@ void setup() {
 }
 
 void loop() {
-    static bool buttonPressed = false;
+    static bool buttonPressed = true;
 
     // 检测按钮是否被按下
     if (!buttonPressed) {
