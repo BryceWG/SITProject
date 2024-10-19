@@ -82,14 +82,25 @@ void turn(float turnAngle)
     delay(300); // 停止一段时间
 }
 
-void readMagnetometerYaw() // 读取磁力计Yaw角数据
+void readMagnetometerYaw()
 {
     String dataFromMagnetometer = Serial2.readStringUntil('\n');
-    // 示例数据格式: Magx:994,Magy:-7256,Magz:-5282,Yaw:-82.1
-    int yawIndex = dataFromMagnetometer.indexOf("Yaw:");
+    Serial.print(PREFIX_SENSOR + "Received from new hardware: ");
+    Serial.println(dataFromMagnetometer);
+
+    // 移除所有不可打印字符
+    String cleanData = "";
+    for (char c : dataFromMagnetometer) {
+        if (isprint(c)) {
+            cleanData += c;
+        }
+    }
+    cleanData.trim();
+
+    int yawIndex = cleanData.indexOf("Yaw:");
     if (yawIndex != -1) 
     {
-        String yawString = dataFromMagnetometer.substring(yawIndex + 5);
+        String yawString = cleanData.substring(yawIndex + 4);
         yawString.trim();
         magYaw = yawString.toFloat();
 
