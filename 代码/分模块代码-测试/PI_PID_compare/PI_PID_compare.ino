@@ -54,9 +54,9 @@ const float accelerationRate = 100.0; // 加速度，单位：mm/s^2
 unsigned long motionStartTime = 0;
 
 // 定义控制器参数的范围和步长
-const float kp_values[] = {0.05, 0.1, 0.15}; // P增益测试值
-const float ki_values[] = {0.02, 0.04, 0.06}; // I增益测试值
-const float kd_values[] = {0.01, 0.02, 0.03}; // D增益测试值
+const float kp_values[] = {0.08, 0.04, 0.06, 0.08, 0.1, 0.12, 0.14}; // P增益测试值
+const float ki_values[] = {0.091, 0.06, 0.07, 0.08, 0.09, 0.1, 0.11, 0.12}; // I增益测试值
+const float kd_values[] = {0.1, 0.05, 0.1, 0.15, 0.2}; // D增益测试值
 
 int kp_index = 0;
 int ki_index = 0;
@@ -71,7 +71,7 @@ void setup() {
     Motor_Init();
     PID_Init();
     
-    MsTimer2::set(20, interruptHandler); // 定时器中断周期为 20ms
+    MsTimer2::set(40, interruptHandler); // 定时器中断周期为 20ms
     MsTimer2::start();
     
     // 输出数据标题
@@ -235,7 +235,7 @@ void Motor_Init() {
     
     digitalWrite(TB6612_M1_IN1, LOW);
     digitalWrite(TB6612_M1_IN2, LOW);
-    analogWrite(Motor_M1_PWM, 0);
+    analogWrite(Motor_M1_PWM, LOW);
 }
 
 void PID_Init() {
@@ -285,48 +285,44 @@ void PID_Cal_Computer_Out() {
 }
 
 void PID_Cal(PID *pid) {
-    float p_term, i_term, d_term;
+    float p, i, d;
 
-    // 计算当前误差
-    pid->err_1 = pid->input - pid->feedback;
-    
-    // 计算 P 项
-    p_term = pid->k_p * pid->err_1;
-    
-    // 计算 I 项，防止积分饱和
-    pid->err_x += pid->err_1;
-    pid->err_x = constrain(pid->err_x, -pid->err_x_max, pid->err_x_max);
-    i_term = pid->k_i * pid->err_x;
-    
-    // 计算 D 项
-    d_term = pid->k_d * (pid->err_1 - pid->err_2);
-    
-    // 计算最终输出
-    pid->output = p_term + i_term + d_term;
-    pid->output = constrain(pid->output, pid->out_min, pid->out_max);
-    
-    // 保存上一次误差
+    // 更新误差
     pid->err_2 = pid->err_1;
+    pid->err_1 = pid->input - pid->feedback;
+
+    // 计算PID各项
+    p = pid->k_p * pid->err_1;
+    i = pid->k_i * pid->err_x;
+    d = pid->k_d * (pid->err_1 - pid->err_2);
+    
+    // 更新累积误差
+    pid->err_x += pid->err_1;
+    
+    // 计算输出
+    pid->output = p + i + d;
+
+    // 限制输出和累积误差
+    if(pid->output > pid->out_max)      pid->output = pid->out_max;
+    if(pid->output < pid->out_min)      pid->output = pid->out_min;
+    if(pid->err_x > pid->err_x_max)     pid->err_x = pid->err_x_max;
 }
 
 void Motor_PWM_Set(float pwm_value) {
-    int pwm_output = (int)abs(pwm_value);
-    pwm_output = constrain(pwm_output, 0, 255);
-
     if(pwm_value >= 0) {
         digitalWrite(TB6612_M1_IN1, HIGH);      
         digitalWrite(TB6612_M1_IN2, LOW);
-        analogWrite(Motor_M1_PWM, pwm_output);  
+        analogWrite(Motor_M1_PWM, pwm_value);  
     } else {
         digitalWrite(TB6612_M1_IN1, LOW);
         digitalWrite(TB6612_M1_IN2, HIGH);
-        analogWrite(Motor_M1_PWM, pwm_output);
+        analogWrite(Motor_M1_PWM, pwm_value * -1);
     }
 }
 
 void Read_motor_M1() {
     motor_M1_dir = digitalRead(M1_ENCODER_B);
-    if(motor_M1_dir == HIGH) {
+    if(motor_M1_dir == 1) {
         motor_M1_count++;
     } else {
         motor_M1_count--;
@@ -338,12 +334,12 @@ void Read_Motor_V() {
     static float last_V_M1 = 0.0;
     const float speed_filter_k = 0.7; // 一阶低通滤波系数
     unsigned long currentTime = millis();
-    unsigned int readInterval = 20; // 编码器读取间隔，单位：ms
+    unsigned int readInterval = 50; // 编码器读取间隔，单位：ms
     
     if ((currentTime - lastReadTime) >= readInterval && !needToReadMotors) {  
         lastReadTime = currentTime;
         motor_M1_count = 0;
-        attachInterrupt(digitalPinToInterrupt(M1_ENCODER_A), Read_motor_M1, RISING);
+        attachInterrupt(digitalPinToInterrupt(M1_ENCODER_A), Read_motor_M1, FALLING);
         needToReadMotors = true;
     } else if (needToReadMotors) {    
         needToReadMotors = false;
@@ -353,10 +349,12 @@ void Read_Motor_V() {
         float deltaTime = (currentTime - lastReadTime) / 1000.0; // 时间差，单位：s
         float revolutions = (float)motor_M1_count / 330.0; // 330为编码器每转的脉冲数
         float distance = revolutions * 65.0 * 3.1416; // 65.0为轮子直径，单位：mm
+
         V_M1 = distance / deltaTime; // 速度，单位：mm/s
-        
+
+        last_V_M1 = M1_Motor_PID.feedback;
         // 对速度进行一阶低通滤波，减少噪声
         M1_Motor_PID.feedback = speed_filter_k * V_M1 + (1 - speed_filter_k) * last_V_M1;
-        last_V_M1 = M1_Motor_PID.feedback;
+        
     }
 }

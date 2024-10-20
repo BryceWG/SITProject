@@ -174,18 +174,20 @@ void Read_Motor_V() {
         detachInterrupt(digitalPinToInterrupt(M3_ENCODER_A));
         detachInterrupt(digitalPinToInterrupt(M4_ENCODER_A));
         
+        float deltaTime = (currentTime - lastReadTime) / 1000.0; // 时间差，单位：s
+
         // 计算每个电机的速度
-        float V_M1 = ((motor_M1 / 330.0) * 65.0 * PI) * 10.0;
-        float V_M2 = ((motor_M2 / 330.0) * 65.0 * PI) * 10.0;
-        float V_M3 = ((motor_M3 / 330.0) * 65.0 * PI) * 10.0;
-        float V_M4 = ((motor_M4 / 330.0) * 65.0 * PI) * 10.0;
+        float V_M1 = ((motor_M1 / 330.0) * 65.0 * PI) / deltaTime;
+        float V_M2 = ((motor_M2 / 330.0) * 65.0 * PI) / deltaTime;
+        float V_M3 = ((motor_M3 / 330.0) * 65.0 * PI) / deltaTime;
+        float V_M4 = ((motor_M4 / 330.0) * 65.0 * PI) / deltaTime;
         
         // 获取上一次的速度
         M1_Speed = M1_Motor_PID.feedback;
         M2_Speed = M2_Motor_PID.feedback;
         M3_Speed = M3_Motor_PID.feedback;
         M4_Speed = M4_Motor_PID.feedback;
-        
+
         // 使用低通滤波器更新速度
         M1_Motor_PID.feedback = (1 - speed_k) * V_M1 + speed_k * M1_Speed;
         M2_Motor_PID.feedback = -1 * (1 - speed_k) * V_M2 + speed_k * M2_Speed;
