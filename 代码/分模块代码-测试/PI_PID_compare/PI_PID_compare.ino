@@ -44,7 +44,6 @@ enum MotionState {
     DECELERATE,          // 减速阶段
     STATIONARY,          // 静止阶段
     SUDDEN_ACCELERATE,   // 突变加速
-    CONSTANT_SPEED,      // 匀速阶段
     SUDDEN_STOP          // 突变停止
 };
 MotionState currentMotion = ACCELERATE;
@@ -74,8 +73,8 @@ void setup() {
     MsTimer2::set(40, interruptHandler); // 定时器中断周期为 20ms
     MsTimer2::start();
     
-    // 输出数据标题
-    Serial.println("Timestamp(ms),ControlType,k_p,k_i,k_d,TargetSpeed(mm/s),ActualSpeed(mm/s),Error(mm/s)");
+    // 输出数据标题，增加Phase列
+    Serial.println("Timestamp_ms,ControlType,k_p,k_i,k_d,TargetSpeed_mm_s,ActualSpeed_mm_s,Error_mm_s,Phase");
     
     motionStartTime = millis();
 }
@@ -153,7 +152,8 @@ void adjustParameters() {
                     ki_index = 0;
                     kd_index = 0;
                     currentControl = PI_CONTROL;
-                    Serial.println("Switched to PI Control");
+                    // 移除切换控制参数时的提示输出
+                    // Serial.println("Switched to PI Control");
                 }
             }
         }
@@ -163,13 +163,7 @@ void adjustParameters() {
         M1_Motor_PID.k_i = ki_values[ki_index];
         M1_Motor_PID.k_d = kd_values[kd_index];
         
-        // 输出当前参数设置
-        Serial.print("New PID Parameters Set: k_p=");
-        Serial.print(M1_Motor_PID.k_p, 5);
-        Serial.print(", k_i=");
-        Serial.print(M1_Motor_PID.k_i, 5);
-        Serial.print(", k_d=");
-        Serial.println(M1_Motor_PID.k_d, 5);
+        // 移除打印当前参数设置的输出语句
     } else if (currentControl == PI_CONTROL) {
         // 遍历PI参数组合
         kd_index = 0;
@@ -188,11 +182,7 @@ void adjustParameters() {
         M1_Motor_PID.k_i = ki_values[ki_index];
         M1_Motor_PID.k_d = 0.0;
         
-        // 输出当前参数设置
-        Serial.print("New PI Parameters Set: k_p=");
-        Serial.print(M1_Motor_PID.k_p, 5);
-        Serial.print(", k_i=");
-        Serial.println(M1_Motor_PID.k_i, 5);
+        // 移除打印当前参数设置的输出语句
     }
 
     // 重置PID状态
@@ -274,13 +264,37 @@ void PID_Cal_Computer_Out() {
         Serial.print(",");
         Serial.print(M1_Motor_PID.k_i, 5); // k_i
         Serial.print(",");
+        if (currentControl == PI_CONTROL) {
+            Serial.print("NaN"); // PI控制时，k_d输出NaN
+        } else {
         Serial.print(M1_Motor_PID.k_d, 5); // k_d
+        }
         Serial.print(",");
         Serial.print(M1_Motor_PID.input, 5); // 目标速度
         Serial.print(",");
         Serial.print(M1_Motor_PID.feedback, 5); // 实际速度
         Serial.print(",");
-        Serial.println(M1_Motor_PID.input - M1_Motor_PID.feedback, 5); // 误差
+        Serial.print(M1_Motor_PID.input - M1_Motor_PID.feedback, 5); // 误差
+        Serial.print(",");
+        Serial.println(getPhaseName(currentMotion)); // 输出当前阶段
+    }
+}
+
+// 添加getPhaseName函数
+String getPhaseName(MotionState state) {
+    switch (state) {
+        case ACCELERATE:
+            return "ACCELERATE"; // 加速阶段
+        case DECELERATE:
+            return "DECELERATE"; // 减速阶段
+        case STATIONARY:
+            return "STATIONARY"; // 静止阶段
+        case SUDDEN_ACCELERATE:
+            return "SUDDEN_ACCELERATE"; // 突变加速
+        case SUDDEN_STOP:
+            return "SUDDEN_STOP"; // 突变停止
+        default:
+            return "Unknown";
     }
 }
 
