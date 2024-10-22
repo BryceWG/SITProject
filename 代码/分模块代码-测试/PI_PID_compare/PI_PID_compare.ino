@@ -53,9 +53,13 @@ const float accelerationRate = 100.0; // 加速度，单位：mm/s^2
 unsigned long motionStartTime = 0;
 
 // 定义控制器参数的范围和步长
-const float kp_values[] = {0.08, 0.04, 0.06, 0.1, 0.12, 0.14}; // P增益测试值
-const float ki_values[] = {0.091, 0.06, 0.07, 0.08, 0.09, 0.1, 0.11, 0.12}; // I增益测试值
-const float kd_values[] = {0.1, 0.05, 0.15, 0.2}; // D增益测试值
+//const float kp_values[] = {0.08, 0.04, 0.06, 0.1, 0.12, 0.14}; // P增益测试值
+//const float ki_values[] = {0.091, 0.06, 0.07, 0.08, 0.09, 0.1, 0.11, 0.12}; // I增益测试值
+//const float kd_values[] = {0.1, 0.05, 0.15, 0.2}; // D增益测试值
+
+const float kp_values[] = {0.08, 0.09, 0.1, 0.11, 0.12, 0.13, 0.14}; // P增益测试值
+const float ki_values[] = {0.07, 0.075, 0.08, 0.085, 0.09, 0.095, 0.1, 0.105}; // I增益测试值
+const float kd_values[] = {0.15, 0.175, 0.2, 0.225, 0.25}; // D增益测试值
 
 int kp_index = 0;
 int ki_index = 0;
