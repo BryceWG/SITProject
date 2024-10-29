@@ -948,14 +948,13 @@ def plot_parameter_space(total_scores_df: pd.DataFrame, save_dir: str):
 # 6. 主程序
 def main():
     # ---- 您可以在此处调整自定义参数值 ----
-    filename = 'code_2_data_3.csv'  # 请替换为您的数据文件名
+    filename = 'code_2_data_4.csv'  # 请替换为您的数据文件名
     save_directory = 'plots'  # 保存图像的目录
     output_filename = 'performance_results.csv'  # 输出的性能指标文件名
-    # ----------------------------------------
 
-    # 定义要分析的运动阶段
-    motion_phases_to_analyze = ['ACCELERATE', 'DECELERATE', 'STATIONARY', 'SUDDEN_ACCELERATE', 'SUDDEN_STOP']
-
+    # 创建保存目录
+    os.makedirs(save_directory, exist_ok=True)  # 添加这一行
+  
     # 导入数据
     data = import_data(filename)
     print("数据导入与预处理完成。")

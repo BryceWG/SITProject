@@ -57,9 +57,17 @@ unsigned long motionStartTime = 0;
 //const float ki_values[] = {0.091, 0.06, 0.07, 0.08, 0.09, 0.1, 0.11, 0.12}; // I增益测试值
 //const float kd_values[] = {0.1, 0.05, 0.15, 0.2}; // D增益测试值
 
-const float kp_values[] = {0.08, 0.09, 0.1, 0.11, 0.12, 0.13, 0.14}; // P增益测试值
-const float ki_values[] = {0.07, 0.075, 0.08, 0.085, 0.09, 0.095, 0.1, 0.105}; // I增益测试值
-const float kd_values[] = {0.15, 0.175, 0.2, 0.225, 0.25}; // D增益测试值
+//const float kp_values[] = {0.08, 0.09, 0.1, 0.11, 0.12, 0.13, 0.14}; // P增益测试值
+//const float ki_values[] = {0.07, 0.075, 0.08, 0.085, 0.09, 0.095, 0.1, 0.105}; // I增益测试值
+//const float kd_values[] = {0.15, 0.175, 0.2, 0.225, 0.25}; // D增益测试值
+
+//const float kp_values[] = {0.11, 0.12, 0.13, 0.14, 0.15, 0.16, 0.17}; // P增益测试值
+//const float ki_values[] = {0.085, 0.09, 0.095, 0.1, 0.105, 0.11, 0.115, 0.12}; // I增益测试值
+//const float kd_values[] = {0.15, 0.175, 0.2, 0.225, 0.25, 0.275}; // D增益测试值
+
+const float kp_values[] = {0.13, 0.14, 0.15, 0.16, 0.17, 0.18, 0.19, 0.2, 0.21}; // P增益测试值
+const float ki_values[] = {0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.11}; // I增益测试值
+const float kd_values[] = {0.175, 0.2, 0.225, 0.25, 0.275}; // D增益测试值
 
 int kp_index = 0;
 int ki_index = 0;
@@ -115,7 +123,7 @@ void updateMotionState() {
             }
             break;
         case STATIONARY:
-            if (elapsedTime >= 3000) {  // 静止3秒
+            if (elapsedTime >= 2000) {  // 静止2秒
                 currentMotion = SUDDEN_ACCELERATE;
                 motionStartTime = millis();
             }
