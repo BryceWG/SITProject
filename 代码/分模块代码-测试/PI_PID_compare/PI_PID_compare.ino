@@ -3,13 +3,13 @@
 // 省略未使用的头文件，简化代码
 
 // 定义电机编码器的引脚
-#define M1_ENCODER_A 2
-#define M1_ENCODER_B 40
+#define M1_ENCODER_A 18
+#define M1_ENCODER_B 43
 
 // 定义电机驱动TB6612的控制引脚
-#define TB6612_M1_IN1 22
-#define TB6612_M1_IN2 23
-#define Motor_M1_PWM 4
+#define TB6612_M1_IN1 28
+#define TB6612_M1_IN2 29
+#define Motor_M1_PWM 7
 
 // PID结构体定义
 typedef struct
@@ -65,8 +65,12 @@ unsigned long motionStartTime = 0;
 //const float ki_values[] = {0.085, 0.09, 0.095, 0.1, 0.105, 0.11, 0.115, 0.12}; // I增益测试值
 //const float kd_values[] = {0.15, 0.175, 0.2, 0.225, 0.25, 0.275}; // D增益测试值
 
-const float kp_values[] = {0.13, 0.14, 0.15, 0.16, 0.17, 0.18, 0.19, 0.2, 0.21}; // P增益测试值
-const float ki_values[] = {0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.11}; // I增益测试值
+//const float kp_values[] = {0.13, 0.14, 0.15, 0.16, 0.17, 0.18, 0.19, 0.2, 0.21}; // P增益测试值
+//const float ki_values[] = {0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.11}; // I增益测试值
+//const float kd_values[] = {0.175, 0.2, 0.225, 0.25, 0.275}; // D增益测试值
+
+const float kp_values[] = {0.145, 0.155, 0.165, 0.175, 0.18, 0.185, 0.19, 0.195, 0.2, 0.21, 0.22}; // P增益测试值
+const float ki_values[] = {0.05, 0.055, 0.06, 0.065, 0.07, 0.075, 0.08, 0.085, 0.09}; // I增益测试值
 const float kd_values[] = {0.175, 0.2, 0.225, 0.25, 0.275}; // D增益测试值
 
 int kp_index = 0;

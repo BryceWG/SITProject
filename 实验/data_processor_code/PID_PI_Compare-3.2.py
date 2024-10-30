@@ -301,66 +301,20 @@ class PerformanceConfig:
         }
 
 def calculate_performance_score(performance_df: pd.DataFrame, config: PerformanceConfig) -> pd.DataFrame:
-    """
-    增强的性能评分计算，筛除超出设计范围的参数组合
-    
-    参数:
-    performance_df: 包含性能指标的DataFrame
-    config: 性能配置对象
-    
-    返回:
-    DataFrame: 筛选后的性能评分数据
-    """
+    """增强的性能评分计算，使用固定的归一化范围"""
     df = performance_df.copy()
-    initial_count = len(df['ParamID'].unique())
     
-    # 创建有效数据掩码
-    valid_mask = pd.Series(True, index=df.index)
-    filtered_params = set()  # 存储被筛除的参数组合ID
-    
-    # 检查每个指标是否在范围内
+    # 归一化处理
     for metric in ['OvershootPercentage', 'SteadyStateError', 'ResponseTime']:
         min_val = config.normalization_ranges[metric]['min']
         max_val = config.normalization_ranges[metric]['max']
         
-        # 找出超出范围的数据
-        out_of_range = (df[metric] < min_val) | (df[metric] > max_val)
-        if out_of_range.any():
-            invalid_params = df[out_of_range]['ParamID'].unique()
-            filtered_params.update(invalid_params)
-            
-            # 详细输出超出范围的情况
-            over_max = df[df[metric] > max_val]
-            under_min = df[df[metric] < min_val]
-            
-            print(f"\n{metric} 超出设计范围的情况:")
-            if not over_max.empty:
-                print(f"超过最大值 {max_val} 的参数组数: {len(over_max['ParamID'].unique())}")
-                print(f"最大超出值: {over_max[metric].max():.2f}")
-            if not under_min.empty:
-                print(f"低于最小值 {min_val} 的参数组数: {len(under_min['ParamID'].unique())}")
-                print(f"最小超出值: {under_min[metric].min():.2f}")
-    
-    # 筛选有效的参数组合
-    valid_params = set(df['ParamID'].unique()) - filtered_params
-    df = df[df['ParamID'].isin(valid_params)].copy()
-    
-    # 输出筛选结果
-    final_count = len(valid_params)
-    print(f"\n参数组合筛选结果:")
-    print(f"初始参数组合数: {initial_count}")
-    print(f"超出设计范围的参数组合数: {len(filtered_params)}")
-    print(f"保留的有效参数组合数: {final_count}")
-    
-    if final_count == 0:
-        raise ValueError("没有参数组合满足设计范围要求！请检查归一化范围设置。")
-    
-    # 对保留的数据进行归一化处理
-    for metric in ['OvershootPercentage', 'SteadyStateError', 'ResponseTime']:
-        min_val = config.normalization_ranges[metric]['min']
-        max_val = config.normalization_ranges[metric]['max']
+        # 将超出范围的值限制在范围内
+        df[metric] = df[metric].clip(min_val, max_val)
+        
+        # 归一化计算
         df[f'{metric}_Normalized'] = (df[metric] - min_val) / (max_val - min_val)
-    
+            
     # 计算加权得分
     df['WeightedScore'] = (
         config.metric_weights['OvershootPercentage'] * df['OvershootPercentage_Normalized'] +
@@ -692,210 +646,56 @@ def plot_parameter_histograms(total_scores_df: pd.DataFrame, save_dir: str):
         plt.savefig(os.path.join(save_dir, filename), dpi=300, bbox_inches='tight')
         plt.close()
 
-def plot_report_card(total_scores_df: pd.DataFrame, performance_df: pd.DataFrame, save_dir: str):
+def generate_summary_report(total_scores_df: pd.DataFrame, phase_weights: dict, filename: str, importance_scores: dict = None):
     """
-    绘制精美的实验报告卡片，包含更多信息和更紧凑的布局
+    生成总结性报告，将数据处理结果和简单分析输出到文件。
     """
-    fig = plt.figure(figsize=(15, 10))
-    fig.patch.set_facecolor('#F0F8FF')
-    
-    # 设置网格
-    gs = plt.GridSpec(4, 2, height_ratios=[1, 2, 2, 2], figure=fig)
-    
-    # 1. 标题区域
-    ax_title = fig.add_subplot(gs[0, :])
-    ax_title.axis('off')
-    ax_title.text(0.5, 0.6, 'PID/PI 控制器参数优化实验报告', 
-                 fontsize=24, ha='center', weight='bold')
-    ax_title.text(0.5, 0.2, f'实验时间: {pd.Timestamp.now().strftime("%Y-%m-%d")}', 
-                 fontsize=12, ha='center', alpha=0.7)
-    
-    # 2. 最优参数展示
-    ax_params = fig.add_subplot(gs[1, 0])
-    ax_params.axis('off')
-    best_params = total_scores_df.iloc[0]
-    param_text = (
-        f"最优控制方案\n\n"
-        f"控制器类型: {best_params['ControlType']}\n"
-        f"Kp = {best_params['k_p']:.4f}\n"
-        f"Ki = {best_params['k_i']:.4f}\n"
-    )
-    if not pd.isna(best_params['k_d']):
-        param_text += f"Kd = {best_params['k_d']:.4f}\n"
-    param_text += f"\n综合得分: {best_params['WeightedPerformanceScore']:.4f}"
-    
-    ax_params.text(0.5, 0.5, param_text, 
-                  fontsize=12, ha='center', va='center',
-                  bbox=dict(facecolor='white', edgecolor='gray', 
-                          alpha=0.8, boxstyle='round,pad=1'))
-    
-    # 3. 控制器性能比较
-    ax_compare = fig.add_subplot(gs[1, 1])
-    control_types = total_scores_df['ControlType'].unique()
-    performance_stats = []
-    
-    for ct in control_types:
-        df_ct = total_scores_df[total_scores_df['ControlType'] == ct]
-        stats = {
-            '类型': ct,
-            '最佳得分': df_ct['WeightedPerformanceScore'].min(),
-            '平均得分': df_ct['WeightedPerformanceScore'].mean()
-        }
-        performance_stats.append(stats)
-    
-    x = np.arange(len(control_types))
-    width = 0.35
-    
-    ax_compare.bar(x - width/2, [s['最佳得分'] for s in performance_stats], 
-                  width, label='最佳得分', color='lightblue')
-    ax_compare.bar(x + width/2, [s['平均得分'] for s in performance_stats], 
-                  width, label='平均得分', color='lightgreen')
-    
-    ax_compare.set_xticks(x)
-    ax_compare.set_xticklabels(control_types)
-    ax_compare.legend()
-    ax_compare.set_title('控制器性能对比')
-    ax_compare.grid(True, alpha=0.3)
-    
-    # 4. 性能指标分布
-    ax_metrics = fig.add_subplot(gs[2, :])
-    metrics = ['OvershootPercentage', 'SteadyStateError', 'ResponseTime']
-    metric_names = ['超调量 (%)', '稳态误差 (mm/s)', '响应时间 (s)']
-    
-    positions = np.arange(len(metrics))
-    box_data = [performance_df[metric] for metric in metrics]
-    
-    # 修复警告：使用 tick_labels 替代 labels
-    bp = ax_metrics.boxplot(box_data, positions=positions, tick_labels=metric_names,
-                           patch_artist=True)
-    
-    for patch in bp['boxes']:
-        patch.set_facecolor('lightblue')
-    
-    ax_metrics.set_title('性能指标分布')
-    ax_metrics.grid(True, alpha=0.3)
-    
-    # 5. 实验统计信息
-    ax_stats = fig.add_subplot(gs[3, 0])
-    ax_stats.axis('off')
-    
-    stats_text = (
-        f"实验统计信息\n\n"
-        f"总参数组合数: {len(total_scores_df)}\n"
-        f"有效组合数: {len(total_scores_df[total_scores_df['WeightedPerformanceScore'] > 0])}\n"
-        f"实验阶段数: {len(performance_df['Phase'].unique())}\n"
-        f"数据采样点数: {len(performance_df)}"
-    )
-    
-    ax_stats.text(0.5, 0.5, stats_text,
-                 fontsize=12, ha='center', va='center',
-                 bbox=dict(facecolor='white', edgecolor='gray',
-                          alpha=0.8, boxstyle='round,pad=1'))
-    
-    # 6. 阶段分析
-    ax_phase = fig.add_subplot(gs[3, 1])
-    phase_counts = performance_df['Phase'].value_counts()
-    ax_phase.pie(phase_counts.values, labels=phase_counts.index,
-                autopct='%1.1f%%', startangle=90)
-    ax_phase.set_title('实验阶段分布')
-    
-    plt.tight_layout()
-    plt.savefig(os.path.join(save_dir, 'experiment_report_card.png'),
-                dpi=300, bbox_inches='tight')
-    plt.close()
-
-def generate_summary_report(total_scores_df: pd.DataFrame, phase_weights: dict, filename: str, performance_df: pd.DataFrame, importance_scores: dict = None):
-    """生成详细的实验分析报告（Markdown格式）"""
     with open(filename, 'w', encoding='utf-8') as f:
-        f.write("# PID/PI 控制器参数优化实验分析报告\n\n")
+        f.write("控制参数综合性能排名报告\n")
+        f.write("========================\n\n")
         
-        # 1. 实验概述
-        f.write("## 1. 实验概述\n\n")
-        f.write(f"- 总参数组合数: {len(total_scores_df)}\n")
-        f.write("- 控制器类型分布:\n")
-        for ct, count in total_scores_df['ControlType'].value_counts().items():
-            f.write(f"  * {ct}: {count} 组\n")
+        f.write("各阶段权重:\n")
+        for phase, weight in phase_weights.items():
+            f.write(f"- {phase}: {weight}%\n")
         f.write("\n")
         
-        # 2. 评价标准
-        f.write("## 2. 评价标准\n\n")
-        f.write("### 2.1 各阶段权重\n\n")
-        f.write("| 阶段 | 权重 |\n")
-        f.write("|------|------|\n")
-        for phase, weight in phase_weights.items():
-            f.write(f"| {phase} | {weight}% |\n")
+        f.write("综合排名（前 20 名）:\n")
+        f.write(total_scores_df.head(20).to_string(index=False))
+        f.write("\n\n")
         
-        f.write("\n### 2.2 性能指标评价范围\n\n")
-        f.write("| 指标 | 范围 |\n")
-        f.write("|------|------|\n")
-        f.write("| 超调量 | 0-50% |\n")
-        f.write("| 稳态误差 | 0-20mm/s |\n")
-        f.write("| 响应时间 | 0-2.0s |\n\n")
+        f.write("参数出现次数统计（前 20% 综合排名）:\n")
+        # 统计各参数值的出现次数
+        top_20_percent = int(len(total_scores_df) * 0.2)
+        df_top = total_scores_df.head(top_20_percent)
         
-        # 3. 最优参数组合
-        f.write("## 3. 最优参数组合\n\n")
-        top_5 = total_scores_df.head(5)
-        for idx, row in top_5.iterrows():
-            f.write(f"### 第{idx+1}名参数组合\n\n")
-            f.write(f"- 控制器类型: {row['ControlType']}\n")
-            f.write(f"- Kp = {row['k_p']:.4f}\n")
-            f.write(f"- Ki = {row['k_i']:.4f}\n")
-            if not pd.isna(row['k_d']):
-                f.write(f"- Kd = {row['k_d']:.4f}\n")
-            f.write(f"- 综合性能得分: {row['WeightedPerformanceScore']:.4f}\n\n")
-            
-            # 提取对应的性能指标数据
-            param_id = row['ParamID']
-            control_type = row['ControlType']
-            metrics = performance_df[(performance_df['ParamID'] == param_id) & (performance_df['ControlType'] == control_type)]
-            
-            if not metrics.empty:
-                f.write("#### 性能指标\n\n")
-                f.write("| 阶段 | 超调量 (%) | 稳态误差 (mm/s) | 响应时间 (s) |\n")
-                f.write("|------|------------|------------------|--------------|\n")
-                for _, metric_row in metrics.iterrows():
-                    f.write(f"| {metric_row['Phase']} | {metric_row['OvershootPercentage']:.2f} | {metric_row['SteadyStateError']:.2f} | {metric_row['ResponseTime']:.2f} |\n")
-                f.write("\n")
-            else:
-                f.write("未找到对应的性能指标数据。\n\n")
+        parameters = ['k_p', 'k_i', 'k_d']
+        for param in parameters:
+            f.write(f"\n参数 {param} 的出现次数:\n")
+            value_counts = df_top[param].value_counts().sort_index()
+            f.write(value_counts.to_string())
+            f.write("\n")
         
-        # 4. 参数分析
-        f.write("## 4. 参数重要度分析\n\n")
+        # 添加参数重要度分析结果
         if importance_scores:
-            f.write("> 注：得分越低表示该参数值对优化越重要\n\n")
+            f.write("\n\n参数重要度分析结果\n")
+            f.write("================\n")
+            f.write("注：得分越低表示该参数值对优化越有效\n\n")
+            
+            # 按参数类型分组输出
             params = {'k_p': [], 'k_i': [], 'k_d': []}
+            
             for key, score in importance_scores.items():
                 param_type = key.split('_')[0] + '_' + key.split('_')[1]
                 params[param_type].append((key, score))
             
             for param_type, scores in params.items():
                 if scores:
-                    f.write(f"### {param_type} 参数分析\n\n")
-                    f.write("| 参数值 | 重要度得分 |\n")
-                    f.write("|--------|------------|\n")
-                    for key, score in sorted(scores, key=lambda x: x[1])[:5]:
+                    f.write(f"\n{param_type} 参数分析:\n")
+                    for key, score in sorted(scores, key=lambda x: x[1]):
                         value = float(key.split('_')[-1])
-                        f.write(f"| {value:.4f} | {score:.4f} |\n")
-                    f.write("\n")
+                        f.write(f"{param_type} = {value:.4f}: {score:.4f}\n")
         
-        # 5. 控制器类型比较
-        f.write("## 5. 控制器类型比较分析\n\n")
-        f.write("| 控制器类型 | 参数组数 | 最佳得分 | 平均得分 | 得分标准差 |\n")
-        f.write("|------------|----------|----------|-----------|------------|\n")
-        for control_type in total_scores_df['ControlType'].unique():
-            df_control = total_scores_df[total_scores_df['ControlType'] == control_type]
-            f.write(f"| {control_type} | {len(df_control)} | {df_control['WeightedPerformanceScore'].min():.4f} | "
-                   f"{df_control['WeightedPerformanceScore'].mean():.4f} | {df_control['WeightedPerformanceScore'].std():.4f} |\n")
-        
-        # 6. 结论与建议
-        f.write("\n## 6. 结论与建议\n\n")
-        best_controller = total_scores_df.iloc[0]['ControlType']
-        f.write(f"1. 最优控制方案为 **{best_controller}** 控制器\n")
-        f.write("2. 建议参数设置:\n")
-        f.write(f"   - Kp = {total_scores_df.iloc[0]['k_p']:.4f}\n")
-        f.write(f"   - Ki = {total_scores_df.iloc[0]['k_i']:.4f}\n")
-        if not pd.isna(total_scores_df.iloc[0]['k_d']):
-            f.write(f"   - Kd = {total_scores_df.iloc[0]['k_d']:.4f}\n")
+        f.write("\n报告结束。\n")
         
 def plot_radar_chart(performance_df: pd.DataFrame, total_scores_df: pd.DataFrame, save_dir: str):
     """
@@ -1064,7 +864,7 @@ def plot_parameter_space(total_scores_df: pd.DataFrame, save_dir: str):
 
 def main():
     # 基本配置
-    filename = 'code_2_data_6.csv'
+    filename = 'code_2_data_5.csv'
     save_directory = 'plots'
     output_filename = 'performance_results.csv'
     os.makedirs(save_directory, exist_ok=True)
@@ -1111,12 +911,9 @@ def main():
     print("参数分布图绘制完成。")
 
     # 生成分析报告
-    generate_summary_report(total_scores_df, config.phase_weights, 'summary_report.md', performance_df, importance_scores)
-    print("分析报告已生成：summary_report.md")
-    
-    # 绘制报告卡片
-    plot_report_card(total_scores_df, performance_df, save_directory)
-    print("实验报告卡片已生成")
+    summary_filename = 'summary_report.txt'
+    generate_summary_report(total_scores_df, config.phase_weights, summary_filename, importance_scores)
+    print(f"分析报告已生成：{summary_filename}")
     
     # 绘制前三名参数组合的速度曲线
     top_3_params = total_scores_df.head(3)
