@@ -79,6 +79,11 @@ int kd_index = 0;
 
 bool parametersExhausted = false; // 标记参数是否遍历完毕
 
+// 添加时间控制相关常量
+const float TARGET_CONTROL_INTERVAL = 0.03;  // 控制周期 30ms
+const float TARGET_SAMPLE_INTERVAL = 0.06;   // 采样周期 60ms
+const float TIME_TOLERANCE = 0.005;   
+
 void setup() {
     Serial.begin(115200);
     while (!Serial) delay(10);
@@ -86,10 +91,9 @@ void setup() {
     Motor_Init();
     PID_Init();
     
-    MsTimer2::set(40, interruptHandler); // 定时器中断周期为 20ms
+    MsTimer2::set(30, interruptHandler); // 设置基础中断周期为30ms
     MsTimer2::start();
     
-    // 输出数据标题，增加Phase列
     Serial.println("Timestamp_ms,ControlType,k_p,k_i,k_d,TargetSpeed_mm_s,ActualSpeed_mm_s,Error_mm_s,Phase");
     
     motionStartTime = millis();
@@ -228,9 +232,27 @@ void updateTargetSpeed() {
 }
 
 void interruptHandler() {
-    PID_Cal_Computer_Out();
-    Read_Motor_V();
+    static unsigned long lastControlTime = 0;
+    static unsigned long lastSampleTime = 0;
+    unsigned long currentTime = millis();
+    
+    // 计算实际时间间隔
+    float controlInterval = (currentTime - lastControlTime) / 1000.0;
+    float sampleInterval = (currentTime - lastSampleTime) / 1000.0;
+    
+    // 执行PID控制
+    if (controlInterval >= TARGET_CONTROL_INTERVAL) {
+        PID_Cal_Computer_Out(controlInterval);
+        lastControlTime = currentTime;
+    }
+    
+    // 执行速度采样
+    if (sampleInterval >= TARGET_SAMPLE_INTERVAL) {
+        Read_Motor_V(sampleInterval);
+        lastSampleTime = currentTime;
+    }
 }
+
 
 void Motor_Init() {
     pinMode(M1_ENCODER_A, INPUT);
@@ -263,37 +285,12 @@ void resetPID(PID *pid) {
     pid->output = 0.0;
 }
 
-void PID_Cal_Computer_Out() {
-    PID_Cal(&M1_Motor_PID);
+void PID_Cal_Computer_Out(float dt) {
+    PID_Cal(&M1_Motor_PID, dt);
     Motor_PWM_Set(M1_Motor_PID.output);
     
-    // 数据输出间隔为20ms
-    if (++timecnt >= 1) { 
-        timecnt = 0;
-
-        // 数据输出，CSV格式
-        Serial.print(millis()); // 时间戳
-        Serial.print(",");
-        Serial.print(currentControl == PID_CONTROL ? "PID" : "PI"); // 控制类型
-        Serial.print(",");
-        Serial.print(M1_Motor_PID.k_p, 5); // k_p
-        Serial.print(",");
-        Serial.print(M1_Motor_PID.k_i, 5); // k_i
-        Serial.print(",");
-        if (currentControl == PI_CONTROL) {
-            Serial.print("NAN"); // PI控制时，k_d输出NaN
-        } else {
-        Serial.print(M1_Motor_PID.k_d, 5); // k_d
-        }
-        Serial.print(",");
-        Serial.print(M1_Motor_PID.input, 5); // 目标速度
-        Serial.print(",");
-        Serial.print(M1_Motor_PID.feedback, 5); // 实际速度
-        Serial.print(",");
-        Serial.print(M1_Motor_PID.input - M1_Motor_PID.feedback, 5); // 误差
-        Serial.print(",");
-        Serial.println(getPhaseName(currentMotion)); // 输出当前阶段
-    }
+    // 直接输出数据，不需要计数器控制
+    OutputData();
 }
 
 // 添加getPhaseName函数
@@ -314,28 +311,41 @@ String getPhaseName(MotionState state) {
     }
 }
 
-void PID_Cal(PID *pid) {
+void PID_Cal(PID *pid, float dt) {
     float p, i, d;
-
+    
     // 更新误差
     pid->err_2 = pid->err_1;
     pid->err_1 = pid->input - pid->feedback;
-
-    // 计算PID各项
-    p = pid->k_p * pid->err_1;
-    i = pid->k_i * pid->err_x;
-    d = pid->k_d * (pid->err_1 - pid->err_2);
     
-    // 更新累积误差
-    pid->err_x += pid->err_1;
+    // 计算PID各项，考虑实际时间间隔
+    p = pid->k_p * pid->err_1;
+    
+    // 积分项考虑时间间隔
+    pid->err_x += pid->err_1 * dt;
+    i = pid->k_i * pid->err_x;
+    
+    // 微分项考虑时间间隔
+    d = pid->k_d * (pid->err_1 - pid->err_2) / dt;
     
     // 计算输出
     pid->output = p + i + d;
-
-    // 限制输出和累积误差
-    if(pid->output > pid->out_max)      pid->output = pid->out_max;
-    if(pid->output < pid->out_min)      pid->output = pid->out_min;
-    if(pid->err_x > pid->err_x_max)     pid->err_x = pid->err_x_max;
+    
+    // 限制输出和积分饱和
+    if(pid->output > pid->out_max) {
+        pid->output = pid->out_max;
+        // 防止积分饱和
+        pid->err_x -= pid->err_1 * dt;
+    }
+    if(pid->output < pid->out_min) {
+        pid->output = pid->out_min;
+        // 防止积分饱和
+        pid->err_x -= pid->err_1 * dt;
+    }
+    
+    // 限制积分项最大值
+    if(pid->err_x > pid->err_x_max) pid->err_x = pid->err_x_max;
+    if(pid->err_x < -pid->err_x_max) pid->err_x = -pid->err_x_max;
 }
 
 void Motor_PWM_Set(float pwm_value) {
@@ -359,32 +369,47 @@ void Read_motor_M1() {
     }
 }
 
-void Read_Motor_V() {
-    static unsigned long lastReadTime = 0;
-    static float last_V_M1 = 0.0;
-    const float speed_filter_k = 0.7; // 一阶低通滤波系数
-    unsigned long currentTime = millis();
-    unsigned int readInterval = 50; // 编码器读取间隔，单位：ms
-    
-    if ((currentTime - lastReadTime) >= readInterval && !needToReadMotors) {  
-        lastReadTime = currentTime;
-        motor_M1_count = 0;
-        attachInterrupt(digitalPinToInterrupt(M1_ENCODER_A), Read_motor_M1, FALLING);
-        needToReadMotors = true;
-    } else if (needToReadMotors) {    
-        needToReadMotors = false;
-        detachInterrupt(digitalPinToInterrupt(M1_ENCODER_A));
-        
-        // 计算速度，单位：mm/s
-        float deltaTime = (currentTime - lastReadTime) / 1000.0; // 时间差，单位：s
-        float revolutions = (float)motor_M1_count / 330.0; // 330为编码器每转的脉冲数
-        float distance = revolutions * 65.0 * 3.1416; // 65.0为轮子直径，单位：mm
-
-        V_M1 = distance / deltaTime; // 速度，单位：mm/s
-
-        last_V_M1 = M1_Motor_PID.feedback;
-        // 对速度进行一阶低通滤波，减少噪声
-        M1_Motor_PID.feedback = speed_filter_k * V_M1 + (1 - speed_filter_k) * last_V_M1;
-        
-    }
+void OutputData() {
+    // 使用逗号分隔的格式输出所有数据
+    Serial.print(millis());
+    Serial.print(",");
+    Serial.print(currentControl == PID_CONTROL ? "PID" : "PI");
+    Serial.print(",");
+    Serial.print(M1_Motor_PID.k_p, 5);
+    Serial.print(",");
+    Serial.print(M1_Motor_PID.k_i, 5);
+    Serial.print(",");
+    Serial.print(currentControl == PI_CONTROL ? "NAN" : String(M1_Motor_PID.k_d, 5));
+    Serial.print(",");
+    Serial.print(M1_Motor_PID.input, 5);
+    Serial.print(",");
+    Serial.print(M1_Motor_PID.feedback, 5);
+    Serial.print(",");
+    Serial.print(M1_Motor_PID.input - M1_Motor_PID.feedback, 5);
+    Serial.print(",");
+    Serial.println(getPhaseName(currentMotion));
 }
+
+void Read_Motor_V(float dt) {
+    static float last_V_M1 = 0.0;
+    const float speed_filter_k = 0.7;
+    
+    // 计算速度，使用实际时间间隔
+    float revolutions = (float)motor_M1_count / 330.0;
+    float distance = revolutions * 65.0 * 3.1416;
+    V_M1 = distance / dt; // 使用实际时间间隔计算速度
+    
+    // 自适应滤波系数
+    float adaptive_k = speed_filter_k;
+    if(abs(V_M1 - last_V_M1) > 50.0) { // 速度变化较大时
+        adaptive_k = 0.9; // 提高响应速度
+    }
+    
+    // 速度滤波
+    last_V_M1 = M1_Motor_PID.feedback;
+    M1_Motor_PID.feedback = adaptive_k * V_M1 + (1 - adaptive_k) * last_V_M1;
+    
+    // 重置编码器计数
+    motor_M1_count = 0;
+}
+
