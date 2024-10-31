@@ -194,6 +194,6 @@ void Read_Motor_V() {
         M3_Motor_PID.feedback = -1 * (1 - speed_k) * V_M3 + speed_k * M3_Speed;
         M4_Motor_PID.feedback = (1 - speed_k) * V_M4 + speed_k * M4_Speed;
         
-        Serial.println(PREFIX_MOVECONTROL + "Read Motor V Finished");
+        //Serial.println(PREFIX_MOVECONTROL + "Read Motor V Finished");
     }
 }

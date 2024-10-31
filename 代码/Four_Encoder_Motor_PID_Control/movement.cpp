@@ -94,9 +94,17 @@ void readUltrasonicStand() {
     myServo.write(0);
     stop();
     delay(300);
-    Serial.println(PREFIX_SENSOR + "Ultrasonic Stand Scanning");
+    // 输出数据开始标记
+    Serial.println("<START>");
+    // 输出小车位置，假设 yaw 表示小车的朝向角度（单位：度）
+    Serial.print("POS:");
+    Serial.print(x); // x 为全局变量，单位：cm
+    Serial.print(",");
+    Serial.print(y); // y 为全局变量，单位：cm
+    Serial.print(",");
+    Serial.println(yaw); // yaw 为全局变量，单位：度
 
-    // 舵机从0度到180度扫描
+    // 舵机从 0 度到 180 度扫描
     for (int i = 0; i <= 180; i++) {
         myServo.write(i);
         ultrasonicDistance = getDistance(Trig, Echo);
@@ -105,16 +113,18 @@ void readUltrasonicStand() {
         } else if (ultrasonicDistance < 5) {
             ultrasonicDistance = 0;
         }
-        Serial.print('#');
-        Serial.print(i);
-        Serial.print('#');
-        Serial.print(ultrasonicDistance);
-        Serial.println('#');
+        // 按要求的格式输出扫描数据
+        Serial.print("SCAN:");
+        Serial.print(i); // angle
+        Serial.print(",");
+        Serial.println(ultrasonicDistance); // distance
         delay(70);
     }
 
     myServo.write(90);
     delay(100);
+    // 输出数据结束标记
+    Serial.println("<END>");
     Serial.println(PREFIX_SENSOR + "Ultrasonic Stand Scanning Finished"); 
 }
 
