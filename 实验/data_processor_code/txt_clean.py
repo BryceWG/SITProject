@@ -39,6 +39,6 @@ def clean_file_after_text(file_path, search_text):
 
 # 使用示例
 if __name__ == "__main__":
-    file_path = "code_2_data_6.txt"  # 替换为你的文件路径
+    file_path = "code_2.3_data_1.txt"  # 替换为你的文件路径
     search_text = "All parameters tested. Experiment completed."  # 替换为你要查找的文本内容
     clean_file_after_text(file_path, search_text)

@@ -1064,7 +1064,7 @@ def plot_parameter_space(total_scores_df: pd.DataFrame, save_dir: str):
 
 def main():
     # 基本配置
-    filename = 'code_2_data_6.csv'
+    filename = 'code_2.3_data_1.csv'
     save_directory = 'plots'
     output_filename = 'performance_results.csv'
     os.makedirs(save_directory, exist_ok=True)

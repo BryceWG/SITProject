@@ -255,29 +255,32 @@ void PID_Cal_Computer_Out() {
     PID_Cal(&M1_Motor_PID);
     Motor_PWM_Set(M1_Motor_PID.output);
     
-    // 数据输出，CSV格式
-    Serial.print(millis()); // 时间戳
-    Serial.print(",");
-    Serial.print(currentControl == PID_CONTROL ? "PID" : "PI"); // 控制类型
-    Serial.print(",");
-    Serial.print(M1_Motor_PID.k_p, 5); // k_p
-    Serial.print(",");
-    Serial.print(M1_Motor_PID.k_i, 5); // k_i
-    Serial.print(",");
-    if (currentControl == PI_CONTROL) {
-        Serial.print("NAN"); // PI控制时，k_d输出NaN
-    } else {
-    Serial.print(M1_Motor_PID.k_d, 5); // k_d
-    }
-    Serial.print(",");
-    Serial.print(M1_Motor_PID.input, 5); // 目标速度
-    Serial.print(",");
-    Serial.print(M1_Motor_PID.feedback, 5); // 实际速度
-    Serial.print(",");
-    Serial.print(M1_Motor_PID.input - M1_Motor_PID.feedback, 5); // 误差
-    Serial.print(",");
-    Serial.println(getPhaseName(currentMotion)); // 输出当前阶段
+    // 数据输出间隔为20ms
+    if (timecnt % 2 == 0) { 
 
+        // 数据输出，CSV格式
+        Serial.print(millis()); // 时间戳
+        Serial.print(",");
+        Serial.print(currentControl == PID_CONTROL ? "PID" : "PI"); // 控制类型
+        Serial.print(",");
+        Serial.print(M1_Motor_PID.k_p, 5); // k_p
+        Serial.print(",");
+        Serial.print(M1_Motor_PID.k_i, 5); // k_i
+        Serial.print(",");
+        if (currentControl == PI_CONTROL) {
+            Serial.print("NAN"); // PI控制时，k_d输出NaN
+        } else {
+        Serial.print(M1_Motor_PID.k_d, 5); // k_d
+        }
+        Serial.print(",");
+        Serial.print(M1_Motor_PID.input, 5); // 目标速度
+        Serial.print(",");
+        Serial.print(M1_Motor_PID.feedback, 5); // 实际速度
+        Serial.print(",");
+        Serial.print(M1_Motor_PID.input - M1_Motor_PID.feedback, 5); // 误差
+        Serial.print(",");
+        Serial.println(getPhaseName(currentMotion)); // 输出当前阶段
+    }
 }
 
 // 添加getPhaseName函数

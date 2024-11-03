@@ -346,10 +346,10 @@ void Read_motor_M1() {
 void Read_Motor_V() {
     static unsigned long lastReadTime = 0;
     static float last_V_M1 = 0.0;
-    const float speed_filter_k = 0.7; // 一阶低通滤波系数
-    unsigned long currentTime = micros();  // 使用micros()获取微秒时间戳
+    const float BASE_FILTER_K = 0.7;    // 基础滤波系数
+    unsigned long currentTime = micros();  // 使用微秒计时
     
-    if (timecnt % 2 == 0) {  
+    if (timecnt % 2 == 1) {  
         lastReadTime = currentTime;
         motor_M1_count = 0;
         attachInterrupt(digitalPinToInterrupt(M1_ENCODER_A), Read_motor_M1, FALLING);
@@ -359,14 +359,38 @@ void Read_Motor_V() {
         detachInterrupt(digitalPinToInterrupt(M1_ENCODER_A));
         
         // 计算速度，单位：mm/s
-        float deltaTime = (currentTime - lastReadTime) / 1000000.0; // 转换为秒，使用微秒计时
+        float deltaTime = (currentTime - lastReadTime) / 1000000.0; // 转换为秒
         float revolutions = (float)motor_M1_count / 330.0; // 330为编码器每转的脉冲数
         float distance = revolutions * 65.0 * 3.1416; // 65.0为轮子直径，单位：mm
 
         V_M1 = distance / deltaTime; // 速度，单位：mm/s
 
+        // 计算速度变化量
+        float speed_change = fabs(V_M1 - last_V_M1);
+        
+        // 自适应滤波系数计算
+        float adaptive_k = BASE_FILTER_K;
+        
+        if (speed_change > 50.0) {
+            // 速度变化很大，快速响应
+            adaptive_k = 0.9;
+        } else if (speed_change > 40.0) {
+            // 速度变化较大，增加响应度
+            adaptive_k = 0.8;
+        } else if (speed_change > 25.0) {
+            // 速度变化中等，使用基础系数
+            adaptive_k = BASE_FILTER_K;
+        } else if (speed_change > 15.0) {
+            // 速度变化较小，增加平滑度
+            adaptive_k = 0.6;
+        } else {
+            // 速度变化很小，最大平滑
+            adaptive_k = 0.5;
+        }
+        
         last_V_M1 = M1_Motor_PID.feedback;
-        // 对速度进行一阶低通滤波，减少噪声
-        M1_Motor_PID.feedback = speed_filter_k * V_M1 + (1 - speed_filter_k) * last_V_M1;
+        // 应用自适应滤波
+        M1_Motor_PID.feedback = adaptive_k * V_M1 + (1 - adaptive_k) * last_V_M1;
+        
     }
 }
