@@ -11,6 +11,7 @@
 #include "utils.h"
 #include "sensors.h"
 #include "pid_control.h"
+#include "wifi_comm.h"
 
 // 全局变量定义
 int frontObstacle = 0;
@@ -94,15 +95,15 @@ void readUltrasonicStand() {
     myServo.write(0);
     stop();
     delay(300);
-    // 输出数据开始标记
-    Serial.println("<START>");
-    // 输出小车位置，假设 yaw 表示小车的朝向角度（单位：度）
-    Serial.print("POS:");
-    Serial.print(x); // x 为全局变量，单位：cm
-    Serial.print(",");
-    Serial.print(y); // y 为全局变量，单位：cm
-    Serial.print(",");
-    Serial.println(yaw); // yaw 为全局变量，单位：度
+    
+    String startMarker = "<START>";
+    Serial.println(startMarker);
+    wifiSendScanData(startMarker);
+    
+    // 输出小车位置数据
+    String posData = "POS:" + String(x) + "," + String(y) + "," + String(yaw);
+    Serial.println(posData);
+    wifiSendScanData(posData);
 
     // 舵机从 0 度到 180 度扫描
     for (int i = 0; i <= 180; i++) {
@@ -113,18 +114,19 @@ void readUltrasonicStand() {
         } else if (ultrasonicDistance < 5) {
             ultrasonicDistance = 0;
         }
-        // 按要求的格式输出扫描数据
-        Serial.print("SCAN:");
-        Serial.print(i); // angle
-        Serial.print(",");
-        Serial.println(ultrasonicDistance); // distance
+        
+        String scanData = "SCAN:" + String(i) + "," + String(ultrasonicDistance);
+        Serial.println(scanData);
+        wifiSendScanData(scanData);
         delay(70);
     }
 
     myServo.write(90);
     delay(100);
-    // 输出数据结束标记
-    Serial.println("<END>");
+    
+    String endMarker = "<END>";
+    Serial.println(endMarker);
+    wifiSendScanData(endMarker);
     Serial.println(PREFIX_SENSOR + "Ultrasonic Stand Scanning Finished"); 
 }
 

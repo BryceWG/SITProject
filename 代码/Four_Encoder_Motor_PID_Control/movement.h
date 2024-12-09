@@ -14,6 +14,10 @@
 #include <Servo.h>
 #include "utils.h"
 
+// 添加舵机和超声波相关变量声明
+extern Servo myServo;  // 声明舵机对象
+extern float ultrasonicDistance;  // 声明超声波距离变量
+
 // 运动控制函数声明
 void moveForward();  // 前进
 void turn(float turnAngle);  // 转向

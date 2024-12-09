@@ -56,7 +56,7 @@ void loop() {
     if (Serial2.available()) {
         String data = Serial2.readStringUntil('\n');
         data.trim();
-        sendLog("从Arduino收到: " + data);
+        sendLog(data);
         
         // LED闪烁表示收到数据
         digitalWrite(LED_BUILTIN, HIGH); 

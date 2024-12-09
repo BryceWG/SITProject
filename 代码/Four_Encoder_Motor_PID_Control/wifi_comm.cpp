@@ -1,120 +1,30 @@
+/*
+ * 文件名: wifi_comm.cpp
+ * 功能: WiFi通信相关的函数实现
+ * 描述: 实现与WiFi模块的通信功能
+ */
+
 #include "wifi_comm.h"
-#include "motor_control.h"
-#include "sensors.h"
 #include "utils.h"
 
-// 全局变量定义
-char wifiBuffer[WIFI_BUFFER_SIZE];
-bool wifiConnected = false;
-unsigned long lastWifiSendTime = 0;
-
-// 位置计算变量
-float posX = 0, posY = 0;
-unsigned long lastPosCalcTime = 0;
-
 void wifiInit() {
-    // 初始化ESP8266串口
-    WIFI_SERIAL.begin(WIFI_BAUD_RATE);
-    
-    // 等待ESP8266启动
-    delay(1000);
-    
-    // 发送AT命令测试通信
-    WIFI_SERIAL.println("AT");
-    delay(100);
-    
-    if (wifiTestConnection()) {
-        Serial.println(PREFIX_SYSTEM + "ESP8266 Connection Successful");
-        wifiConnected = true;
-    } else {
-        Serial.println(PREFIX_ERROR + "ESP8266 Connection Failed");
-    }
+    // 初始化Serial3用于与ESP32通信
+    Serial3.begin(115200);
+    Serial.println(PREFIX_SYSTEM + "WiFi模块通信初始化完成");
 }
-
-bool wifiTestConnection() {
-    unsigned long startTime = millis();
-    while (millis() - startTime < 1000) {  // 1秒超时
-        if (WIFI_SERIAL.available()) {
-            String response = WIFI_SERIAL.readString();
-            if (response.indexOf("OK") != -1) {
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
-// 计算位置
-void calculatePosition() {
-    unsigned long currentTime = micros();
-    float deltaTime = (currentTime - lastPosCalcTime) / 1000000.0f;  // 转换为秒
-    lastPosCalcTime = currentTime;
-    
-    // 计算平均速度（米/秒）
-    float avgSpeed = (M1_Motor_PID.feedback + M2_Motor_PID.feedback + 
-                     M3_Motor_PID.feedback + M4_Motor_PID.feedback) / 4.0f;
-    avgSpeed = avgSpeed * 0.065f * PI / 60.0f;  // 转换单位：RPM -> m/s
-    
-    // 根据当前角度和速度更新位置
-    float radYaw = yaw * PI / 180.0f;  // 转换为弧度
-    posX += avgSpeed * cos(radYaw) * deltaTime * 100;  // 转换为厘米
-    posY += avgSpeed * sin(radYaw) * deltaTime * 100;  // 转换为厘米
-}
-
-void wifiSendData() {
-    if (!wifiConnected) return;
-    
-    // 每100ms发送一次数据
-    if (millis() - lastWifiSendTime >= WIFI_SEND_INTERVAL) {
-        lastWifiSendTime = millis();
-        
-        // 计算位置
-        calculatePosition();
-        
-        // 发送数据帧
-        WIFI_SERIAL.println("<START>");
-        
-        // 发送位置数据
-        snprintf(wifiBuffer, WIFI_BUFFER_SIZE,
-                "POS:%.2f,%.2f,%.2f",
-                posX, posY, yaw);
-        WIFI_SERIAL.println(wifiBuffer);
-        
-        // 发送电机数据
-        snprintf(wifiBuffer, WIFI_BUFFER_SIZE,
-                "MOTORS:%.2f,%.2f,%.2f,%.2f",
-                M1_Motor_PID.feedback, M2_Motor_PID.feedback,
-                M3_Motor_PID.feedback, M4_Motor_PID.feedback);
-        WIFI_SERIAL.println(wifiBuffer);
-        
-        // 发送传感器数据
-        snprintf(wifiBuffer, WIFI_BUFFER_SIZE,
-                "SENSORS:%.2f",
-                ultrasonicDistance);
-        WIFI_SERIAL.println(wifiBuffer);
-        
-        WIFI_SERIAL.println("<END>");
-    }
-}
-
+/*
 void wifiHandleCommand() {
-    if (!wifiConnected) return;
-    
-    // 检查是否有新命令
-    if (WIFI_SERIAL.available()) {
-        String cmd = WIFI_SERIAL.readStringUntil('\n');
-        cmd.trim();
-        
-        // 处理命令
-        if (cmd == "STOP") {
-            // 停止电机
-            Motor_PWM_Set(0, 0, 0, 0);
-            Serial.println(PREFIX_SYSTEM + "Received STOP command");
-        } else if (cmd == "RESET_POS") {
-            // 重置位置
-            posX = 0;
-            posY = 0;
-            Serial.println(PREFIX_SYSTEM + "Position reset");
-        }
+    // 处理来自WiFi模块的命令
+    if (Serial3.available()) {
+        String command = Serial3.readStringUntil('\n');
+        command.trim();
+        Serial.println(PREFIX_SYSTEM + "收到WiFi命令: " + command);
+        // TODO: 根据需要处理特定命令
     }
+}
+*/
+
+void wifiSendScanData(const String& data) {
+    // 直接将扫描数据发送到WiFi模块
+    Serial3.println(data);
 }

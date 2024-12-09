@@ -127,9 +127,7 @@ void interruptHandler() {
 
     Read_Motor_V();
 
-    // 处理WiFi通信
-    wifiSendData();
-    wifiHandleCommand();
+    //wifiHandleCommand();
     
     timecnt++;
 }
