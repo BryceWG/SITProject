@@ -19,6 +19,7 @@
 #include "sensors.h"
 #include "movement.h"
 #include "utils.h"
+#include "wifi_comm.h"
 
 void setup() {
     // 初始化电机和PID控制器
@@ -33,6 +34,9 @@ void setup() {
     // 初始化MPU6050和超声波传感器
     mpuInit();
     ultrasonicInit();
+
+    // 初始化WiFi模块
+    wifiInit();
     
     // 设置按钮引脚为输入上拉模式
     pinMode(BUTTON_PIN, INPUT_PULLUP);
@@ -60,7 +64,7 @@ void setup() {
     }
 
     // 设置定时中断，用于PID计算和电机速度读取
-    MsTimer2::set(40, interruptHandler);
+    MsTimer2::set(30, interruptHandler);
     MsTimer2::start();
 }
 
@@ -118,14 +122,14 @@ void loop() {
 
 // 中断处理函数，用于PID计算和电机速度读取
 void interruptHandler() {
-    //switch (currentState) {
-    //case STATE_PID:
-        PID_Cal_Computer_Out();
-        //currentState = STATE_READ_MOTOR;
-        //break;
-    //case STATE_READ_MOTOR:
-        Read_Motor_V();
-        //currentState = STATE_PID;
-        //break;
-    //}
+    // 每次都执行PID控制（30ms）
+    PID_Cal_Computer_Out();
+
+    Read_Motor_V();
+
+    // 处理WiFi通信
+    wifiSendData();
+    wifiHandleCommand();
+    
+    timecnt++;
 }

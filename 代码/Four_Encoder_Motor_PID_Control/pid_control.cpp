@@ -84,14 +84,4 @@ void PID_Cal_Computer_Out() {
     // 设置电机PWM
     Motor_PWM_Set(M1_Motor_PID.output, M2_Motor_PID.output, M3_Motor_PID.output, M4_Motor_PID.output);
     
-    // 注释掉的计时代码，可能用于调试
-    // static int timecnt = 0;
-    // static int time_seconds = 0;
-    
-    // timecnt++;
-    
-    // if(timecnt == 20) {
-    //     time_seconds++;
-    //     timecnt = 0;
-    // }
 }

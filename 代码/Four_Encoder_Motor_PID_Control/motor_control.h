@@ -21,8 +21,9 @@ void Read_motor_M4();  // 读取电机4编码器
 void Read_Motor_V();   // 读取所有电机速度
 
 // 全局变量声明
-extern volatile float motor_M1, motor_M2, motor_M3, motor_M4;  // 电机编码器计数
+extern volatile long motor_M1, motor_M2, motor_M3, motor_M4;  // 电机编码器计数
 extern volatile bool needToReadMotors;  // 是否需要读取电机速度的标志
 extern int motor_M1_dir, motor_M2_dir, motor_M3_dir, motor_M4_dir;  // 电机方向
+extern volatile int timecnt;
 
 #endif

@@ -11,9 +11,9 @@
 #include "pid_control.h"
 
 // 全局变量定义
-volatile float motor_M1 = 0, motor_M2 = 0, motor_M3 = 0, motor_M4 = 0;
-volatile bool needToReadMotors = false;
+volatile long motor_M1 = 0, motor_M2 = 0, motor_M3 = 0, motor_M4 = 0;
 int motor_M1_dir = 0, motor_M2_dir = 0, motor_M3_dir = 0, motor_M4_dir = 0;
+volatile int timecnt = 0;
 
 void motorInit() {
     // 设置编码器引脚为输入
@@ -145,11 +145,11 @@ void Read_motor_M4() {
 // 读取所有电机速度
 void Read_Motor_V() {
     static unsigned long lastReadTime = 0;
-    static float M1_Speed = 0, M2_Speed = 0, M3_Speed = 0, M4_Speed = 0;
+    static float M1_Speed = 0.0, M2_Speed = 0.0, M3_Speed = 0.0, M4_Speed = 0.0;
     const float speed_k = 0.3;
-    unsigned long currentTime = millis();
+    unsigned long currentTime = micros(); // 使用micros()获取微秒时间戳
     
-    if (currentTime - lastReadTime >= 50 && !needToReadMotors) {  
+    if (timecnt % 2 == 0) {  
         lastReadTime = currentTime;
         
         // 重置编码器计数
@@ -164,17 +164,14 @@ void Read_Motor_V() {
         attachInterrupt(digitalPinToInterrupt(M3_ENCODER_A), Read_motor_M3, FALLING);
         attachInterrupt(digitalPinToInterrupt(M4_ENCODER_A), Read_motor_M4, FALLING);
         
-        needToReadMotors = true;
-    } else if (needToReadMotors) {    
-        needToReadMotors = false;
-        
+    } else {    
         // 禁用中断
         detachInterrupt(digitalPinToInterrupt(M1_ENCODER_A));
         detachInterrupt(digitalPinToInterrupt(M2_ENCODER_A));
         detachInterrupt(digitalPinToInterrupt(M3_ENCODER_A));
         detachInterrupt(digitalPinToInterrupt(M4_ENCODER_A));
         
-        float deltaTime = (currentTime - lastReadTime) / 1000.0; // 时间差，单位：s
+        float deltaTime = (currentTime - lastReadTime) / 1000000.0; // 转换为秒，使用微秒计时
 
         // 计算每个电机的速度
         float V_M1 = ((motor_M1 / 330.0) * 65.0 * PI) / deltaTime;
@@ -193,7 +190,6 @@ void Read_Motor_V() {
         M2_Motor_PID.feedback = -1 * (1 - speed_k) * V_M2 + speed_k * M2_Speed;
         M3_Motor_PID.feedback = -1 * (1 - speed_k) * V_M3 + speed_k * M3_Speed;
         M4_Motor_PID.feedback = (1 - speed_k) * V_M4 + speed_k * M4_Speed;
-        
-        //Serial.println(PREFIX_MOVECONTROL + "Read Motor V Finished");
+
     }
 }

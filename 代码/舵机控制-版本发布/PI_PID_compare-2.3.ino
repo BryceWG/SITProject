@@ -29,7 +29,6 @@ typedef struct
 } PID;
 
 volatile long motor_M1_count = 0;    // 编码器计数，使用 long 类型防止溢出
-volatile bool needToReadMotors = false;
 
 unsigned int timecnt = 0;
 float V_M1 = 0.0;
