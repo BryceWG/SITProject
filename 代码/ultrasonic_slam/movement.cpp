@@ -60,7 +60,7 @@ void turn(float turnAngle) {
     Serial.println(targetAngle);
 
     // 持续转向直到达到目标角度
-    while (abs(yaw - targetAngle) > 10) {
+    while (abs(yaw - targetAngle) > 5) {
         if (turnAngle < 0) {
             // 左转
             M1_Motor_PID.input = 100;
@@ -109,8 +109,8 @@ void readUltrasonicStand() {
     for (int i = 0; i <= 180; i++) {
         myServo.write(i);
         ultrasonicDistance = getDistance(Trig, Echo);
-        if (ultrasonicDistance > 50) {
-            ultrasonicDistance = 50;
+        if (ultrasonicDistance > 100) {
+            ultrasonicDistance = 100;
         } else if (ultrasonicDistance < 5) {
             ultrasonicDistance = 0;
         }
@@ -118,7 +118,7 @@ void readUltrasonicStand() {
         String scanData = "SCAN:" + String(i) + "," + String(ultrasonicDistance);
         Serial.println(scanData);
         wifiSendScanData(scanData);
-        delay(70);
+        delay(30);
     }
 
     myServo.write(90);
