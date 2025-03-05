@@ -23,7 +23,7 @@ log_filename = os.path.join('logs', f'wifi_data_{datetime.now().strftime("%Y%m%d
 print(f"日志文件将保存在: {log_filename}")
 
 # 设置最大探测范围（单位：厘米）
-MAX_DETECTION_RANGE = 100
+MAX_DETECTION_RANGE = 70
 
 # WiFi服务器配置
 HOST = '192.168.4.1'  # ESP32的IP地址
@@ -64,7 +64,7 @@ ax.grid(True)
 # 设置初始显示范围和纵横比
 initial_range = 150
 ax.set_xlim(-initial_range, initial_range)
-ax.set_ylim(-initial_range, initial_range)
+ax.set_ylim(initial_range, -initial_range)  # 反转y轴方向
 # 使用'equal'而不是'equal, datalim'，并设置adjustable参数
 ax.set_aspect('equal', adjustable='box')
 
@@ -236,9 +236,9 @@ def update_plot():
                             x_center = (x_max + x_min) / 2
                             y_center = (y_max + y_min) / 2
                             
-                            # 添加一个小的偏移量，确保范围永远不会完全相同
+                            # 注意y轴范围的设置顺序是相反的
                             ax.set_xlim(x_center - x_range/2, x_center + x_range/2 + 1e-6)
-                            ax.set_ylim(y_center - x_range/2, y_center + x_range/2 + 1e-6)
+                            ax.set_ylim(y_center + x_range/2 + 1e-6, y_center - x_range/2)  # 反转y轴范围
                 else:
                     # 确保手动模式下也不会有相同的上下限
                     if abs(current_xlim[1] - current_xlim[0]) < 1e-10:
@@ -246,10 +246,10 @@ def update_plot():
                         current_xlim = [center - 50, center + 50]
                     if abs(current_ylim[1] - current_ylim[0]) < 1e-10:
                         center = current_ylim[0]
-                        current_ylim = [center - 50, center + 50]
+                        current_ylim = [center + 50, center - 50]  # 注意顺序是相反的
                         
                     ax.set_xlim(current_xlim[0], current_xlim[1] + 1e-6)
-                    ax.set_ylim(current_ylim[0], current_ylim[1] + 1e-6)
+                    ax.set_ylim(current_ylim[0], current_ylim[1])  # y轴范围已经是反转的
 
                 # 更新标题
                 if font:
@@ -301,11 +301,11 @@ def read_wifi_data():
             # 处理数据
             while True:
                 if not is_receiving_segment:
-                    start_index = buffer.find('从Arduino收到: <START>')
+                    start_index = buffer.find('<START>')
                     if start_index == -1:
                         break
                     
-                    buffer = buffer[start_index + len('从Arduino收到: <START>'):]
+                    buffer = buffer[start_index + len('<START>'):]
                     is_receiving_segment = True
                     current_segment = []
                     # 记录数据段开始
@@ -313,26 +313,26 @@ def read_wifi_data():
                         f.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')}] 开始新数据段\n")
                     continue
                 
-                end_index = buffer.find('从Arduino收到: <END>')
+                end_index = buffer.find('<END>')
                 
                 while True:
                     line_end = buffer.find('\n')
                     if line_end == -1:
                         break
                         
-                    line = buffer[:line_end]
+                    line = buffer[:line_end].strip()
                     buffer = buffer[line_end + 1:]
                     
-                    # 如果行包含"从Arduino收到: "前缀，提取实际数据部分
-                    if '从Arduino收到: ' in line:
-                        line = line.split('从Arduino收到: ')[1].strip()
-                    else:
-                        continue  # 跳过不包含前缀的行
+                    # 跳过空行
+                    if not line:
+                        continue
                     
                     # 处理位置数据
                     pos_match = re.match(r'POS:([-+]?\d*\.?\d+),([-+]?\d*\.?\d+),([-+]?\d*\.?\d+)', line)
                     if pos_match:
                         x, y, yaw = map(float, pos_match.groups())
+                        # 反转y坐标
+                        y = -y
                         with data_lock:
                             car_trajectory.append((x, y, yaw))
                         # 记录解析后的位置数据
@@ -349,10 +349,10 @@ def read_wifi_data():
                             
                         adjusted_angle = angle - 90
                         scan_x = distance * math.cos(math.radians(adjusted_angle))
-                        scan_y = distance * math.sin(math.radians(adjusted_angle))
+                        scan_y = -distance * math.sin(math.radians(adjusted_angle))  # 反转y坐标
                         
                         if car_trajectory:
-                            x, y, yaw = car_trajectory[-1]
+                            x, y, yaw = car_trajectory[-1]  # y已经是反转后的值
                             rotated_x = scan_x * math.cos(math.radians(yaw)) - scan_y * math.sin(math.radians(yaw))
                             rotated_y = scan_x * math.sin(math.radians(yaw)) + scan_y * math.cos(math.radians(yaw))
                             final_x = rotated_x + x
@@ -379,7 +379,7 @@ def read_wifi_data():
                     with open(log_filename, 'a', encoding='utf-8') as f:
                         f.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')}] 数据段结束\n")
                     
-                    buffer = buffer[end_index + len('从Arduino收到: <END>'):]
+                    buffer = buffer[end_index + len('<END>'):]
                     is_receiving_segment = False
                     break
                 

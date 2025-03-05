@@ -13,7 +13,7 @@ import traceback
 from matplotlib.patches import FancyArrowPatch
 
 # 设置最大探测范围（单位：厘米）
-MAX_DETECTION_RANGE = 50
+MAX_DETECTION_RANGE = 100
 
 # 尝试加载支持中文的字体
 try:
