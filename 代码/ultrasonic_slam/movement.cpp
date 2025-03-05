@@ -109,8 +109,8 @@ void readUltrasonicStand() {
     for (int i = 0; i <= 180; i++) {
         myServo.write(i);
         ultrasonicDistance = getDistance(Trig, Echo);
-        if (ultrasonicDistance > 100) {
-            ultrasonicDistance = 100;
+        if (ultrasonicDistance > 70) {
+            ultrasonicDistance = 70;
         } else if (ultrasonicDistance < 5) {
             ultrasonicDistance = 0;
         }
@@ -186,7 +186,7 @@ void distanceLimitDetect(float initial_displacement_x, float initial_displacemen
     Serial.print(PREFIX_MOVECONTROL + "Current Distance: ");
     Serial.println(current_distance);
 
-    if (current_distance >= 50) {
+    if (current_distance >= 70) {
         distanceLimit = 1;
         Serial.println(PREFIX_MOVECONTROL + "Attention! Distance Limit!");
     }
