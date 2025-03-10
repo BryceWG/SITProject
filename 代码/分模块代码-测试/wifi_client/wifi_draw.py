@@ -13,6 +13,7 @@ from matplotlib.patches import FancyArrowPatch
 import socket
 import os
 from datetime import datetime
+import argparse
 
 # 创建logs目录（如果不存在）
 if not os.path.exists('logs'):
@@ -42,19 +43,8 @@ except FileNotFoundError:
     plt.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei', 'Arial Unicode MS']
     plt.rcParams['axes.unicode_minus'] = False
 
-# 创建socket连接
-try:
-    client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    print(f"正在连接到 {HOST}:{PORT}...")
-    client.connect((HOST, PORT))
-    print("WiFi连接成功！")
-except socket.error as e:
-    print(f"无法连接到WiFi服务器。错误信息: {e}")
-    print("请检查:")
-    print("1. ESP32是否正确配置为AP模式")
-    print("2. IP地址和端口是否正确")
-    print("3. ESP32是否正常工作")
-    sys.exit(1)
+# 初始化socket连接变量
+client = None
 
 # 初始化图形
 plt.ion()
@@ -407,6 +397,64 @@ def read_wifi_data():
         f.write(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')}] WiFi读取线程结束\n")
     client.close()
 
+# 添加从本地log文件读取数据的函数
+def read_log_file(log_file_path):
+    global current_scan_points, all_scan_points, accumulated_scan_points, car_trajectory
+    
+    print(f"正在从日志文件读取数据: {log_file_path}")
+    
+    try:
+        with open(log_file_path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+        
+        print(f"成功读取日志文件，共 {len(lines)} 行")
+        
+        # 重置数据
+        with data_lock:
+            all_scan_points = []
+            accumulated_scan_points = []
+            current_scan_points = []
+            car_trajectory = [(0, 0, 0)]  # 初始化轨迹，起始点为原点
+        
+        # 解析日志文件
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            
+            # 解析位置数据
+            pos_pattern = r'\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+\] 位置数据: x=([-+]?\d*\.?\d+), y=([-+]?\d*\.?\d+), yaw=([-+]?\d*\.?\d+)'
+            pos_match = re.search(pos_pattern, line)
+            if pos_match:
+                x, y, yaw = map(float, pos_match.groups())
+                with data_lock:
+                    car_trajectory.append((x, y, yaw))
+                continue
+            
+            # 解析计算后的扫描点
+            scan_pattern = r'\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+\] 计算后的扫描点: x=([-+]?\d*\.?\d+), y=([-+]?\d*\.?\d+)'
+            scan_match = re.search(scan_pattern, line)
+            if scan_match:
+                x, y = map(float, scan_match.groups())
+                with data_lock:
+                    all_scan_points.append((x, y))
+                    accumulated_scan_points.append((x, y))
+                continue
+            
+            # 解析数据段结束标记
+            if '数据段结束' in line:
+                with data_lock:
+                    accumulated_scan_points.append((float('nan'), float('nan')))
+                continue
+        
+        # 通知更新图形
+        update_queue.put(True)
+        print("日志文件解析完成")
+        
+    except Exception as e:
+        error_msg = f"日志文件读取错误: {e}\n{traceback.format_exc()}"
+        print(error_msg)
+
 def on_scroll(event):
     global zoom_level, current_xlim, current_ylim
     global manual_mode
@@ -562,11 +610,36 @@ def toggle_mode(event):
             f"Max Detection Range: {MAX_DETECTION_RANGE} cm    Mode: {'Manual' if manual_mode else 'Auto'}")
 
 def main():
-    global current_xlim, current_ylim
-
-    # 创建并启动WiFi数据读取线程
-    wifi_thread = threading.Thread(target=read_wifi_data, daemon=True)
-    wifi_thread.start()
+    global current_xlim, current_ylim, client
+    
+    # 解析命令行参数
+    parser = argparse.ArgumentParser(description='WiFi数据可视化工具')
+    parser.add_argument('--log', type=str, help='本地日志文件路径，如果提供则从日志文件读取数据而不是从WiFi')
+    args = parser.parse_args()
+    
+    # 根据是否提供log文件路径决定数据来源
+    if args.log:
+        # 从本地log文件读取数据
+        log_thread = threading.Thread(target=read_log_file, args=(args.log,), daemon=True)
+        log_thread.start()
+    else:
+        # 创建socket连接
+        try:
+            client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            print(f"正在连接到 {HOST}:{PORT}...")
+            client.connect((HOST, PORT))
+            print("WiFi连接成功！")
+        except socket.error as e:
+            print(f"无法连接到WiFi服务器。错误信息: {e}")
+            print("请检查:")
+            print("1. ESP32是否正确配置为AP模式")
+            print("2. IP地址和端口是否正确")
+            print("3. ESP32是否正常工作")
+            sys.exit(1)
+            
+        # 创建并启动WiFi数据读取线程
+        wifi_thread = threading.Thread(target=read_wifi_data, daemon=True)
+        wifi_thread.start()
 
     # 连接窗口关闭事件
     fig.canvas.mpl_connect('close_event', lambda event: exit_event.set())
@@ -591,12 +664,12 @@ def main():
         traceback.print_exc()
     finally:
         exit_event.set()
-        wifi_thread.join(timeout=1.0)
-        try:
-            client.close()
-            print("WiFi连接已关闭")
-        except:
-            print("关闭WiFi连接时出错")
+        if client:
+            try:
+                client.close()
+                print("WiFi连接已关闭")
+            except:
+                print("关闭WiFi连接时出错")
         plt.close('all')
         sys.exit(0)
 
