@@ -92,6 +92,7 @@ UPDATE_INTERVAL = 0.1
 
 # 添加退出事件
 exit_event = threading.Event()
+start_replay_event = threading.Event()  # 添加开始回放事件
 
 # 添加变量用于缩放和平移
 zoom_level = 1.0
@@ -116,13 +117,17 @@ def read_log_file(log_path):
     """
     global current_scan_points, all_scan_points, accumulated_scan_points, car_trajectory
     
-    print(f"正在从日志文件读取数据: {log_path}")
+    print(f"正在准备回放日志文件: {log_path}")
+    print("请点击'开始回放'按钮开始...")
     
     try:
         with open(log_path, 'r', encoding='utf-8') as f:
             lines = f.readlines()
         
         print(f"成功读取日志文件，共 {len(lines)} 行")
+        
+        # 等待开始回放按钮被点击
+        start_replay_event.wait()
         
         # 解析日志文件,收集所有带时间戳的事件
         events = []
@@ -638,6 +643,11 @@ def toggle_mode(event):
         print("切换到手动模式")
     else:
         print("切换到自动模式")
+    
+    # 如果在手动模式下没有数据显示，可能需要点击开始回放
+    if manual_mode and not (accumulated_scan_points or car_trajectory):
+        print("请点击'开始回放'按钮开始数据回放")
+
     # 如果切换到自动模式，重置坐标轴以适应所有数据
     if not manual_mode:
         with data_lock:
@@ -690,6 +700,12 @@ def toggle_mode(event):
             f"Car Position: ({car_x:.2f}, {car_y:.2f}), Orientation: {car_yaw:.2f}°\n"
             f"Max Detection Range: {MAX_DETECTION_RANGE} cm    Mode: {'Manual' if manual_mode else 'Auto'}")
 
+def start_replay(event):
+    """开始回放按钮的回调函数"""
+    if not start_replay_event.is_set():
+        print("开始回放数据...")
+        start_replay_event.set()
+
 def main():
     global current_xlim, current_ylim, client
     
@@ -732,9 +748,14 @@ def main():
     fig.canvas.mpl_connect('motion_notify_event', on_motion)
 
     # 添加状态切换按钮
-    ax_button = plt.axes([0.81, 0.01, 0.1, 0.05])
-    button = Button(ax_button, '切换模式', hovercolor='0.975')
-    button.on_clicked(toggle_mode)
+    ax_mode_button = plt.axes([0.81, 0.01, 0.1, 0.05])
+    mode_button = Button(ax_mode_button, '切换模式', hovercolor='0.975')
+    mode_button.on_clicked(toggle_mode)
+
+    # 添加开始回放按钮
+    ax_start_button = plt.axes([0.69, 0.01, 0.1, 0.05])
+    start_button = Button(ax_start_button, '开始回放', hovercolor='0.975')
+    start_button.on_clicked(start_replay)
 
     try:
         update_plot()
