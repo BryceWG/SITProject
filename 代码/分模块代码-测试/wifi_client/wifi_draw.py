@@ -43,7 +43,7 @@ except FileNotFoundError:
     plt.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei', 'Arial Unicode MS']
     plt.rcParams['axes.unicode_minus'] = False
 
-# 初始化socket连接变量
+# 初始化socket变量
 client = None
 
 # 初始化图形
@@ -106,6 +106,277 @@ manual_mode = False
 car_x = 0.0
 car_y = 0.0
 car_yaw = 0.0
+
+def read_log_file(log_path):
+    """
+    从本地日志文件读取数据并进行处理
+    
+    Args:
+        log_path: 日志文件路径
+    """
+    global current_scan_points, all_scan_points, accumulated_scan_points, car_trajectory
+    
+    print(f"正在从日志文件读取数据: {log_path}")
+    
+    try:
+        with open(log_path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+        
+        print(f"成功读取日志文件，共 {len(lines)} 行")
+        
+        # 解析日志文件,收集所有带时间戳的事件
+        events = []
+        timestamp_pattern = re.compile(r'\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+)\]')
+        pos_pattern = re.compile(r'\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+\] 位置数据: x=([-+]?\d*\.?\d+), y=([-+]?\d*\.?\d+), yaw=([-+]?\d*\.?\d+)')
+        scan_pattern = re.compile(r'\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+\] 扫描数据: angle=([-+]?\d*\.?\d+), distance=([-+]?\d*\.?\d+)')
+        segment_end_pattern = re.compile(r'\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+\] 数据段结束')
+        
+        current_segment = []
+        for line in lines:
+            # 解析时间戳
+            timestamp_match = timestamp_pattern.search(line)
+            if not timestamp_match:
+                continue
+                
+            timestamp_str = timestamp_match.group(1)
+            timestamp = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S.%f')
+            
+            # 处理位置数据
+            pos_match = pos_pattern.search(line)
+            if pos_match:
+                x, y, yaw = map(float, pos_match.groups())
+                events.append({
+                    'timestamp': timestamp,
+                    'type': 'position',
+                    'data': (x, y, yaw)
+                })
+                continue
+            
+            # 处理扫描数据
+            scan_match = scan_pattern.search(line)
+            if scan_match:
+                angle, distance = map(float, scan_match.groups())
+                events.append({
+                    'timestamp': timestamp,
+                    'type': 'scan',
+                    'data': (angle, distance)
+                })
+                continue
+                
+            # 处理数据段结束标记
+            segment_end_match = segment_end_pattern.search(line)
+            if segment_end_match:
+                events.append({
+                    'timestamp': timestamp,
+                    'type': 'segment_end',
+                    'data': None
+                })
+        
+        # 按时间戳排序事件
+        events.sort(key=lambda x: x['timestamp'])
+        
+        if not events:
+            print("未在日志中找到有效数据")
+            return
+            
+        # 获取第一个和最后一个事件的时间戳
+        start_time = events[0]['timestamp']
+        end_time = events[-1]['timestamp']
+        total_duration = (end_time - start_time).total_seconds()
+        
+        print(f"数据时间范围: {start_time} 到 {end_time}")
+        print(f"总时长: {total_duration:.2f} 秒")
+        
+        # 初始化显示
+        current_position = None
+        
+        # 处理每个事件
+        for event in events:
+            # 计算事件的相对时间
+            relative_time = (event.get('timestamp') - start_time).total_seconds()
+            
+            # 根据事件类型更新数据
+            if event['type'] == 'position':
+                x, y, yaw = event['data']
+                with data_lock:
+                    car_trajectory.append((x, y, yaw))
+                    current_position = (x, y, yaw)
+                    update_queue.put(True)
+                
+            elif event['type'] == 'scan' and current_position:
+                angle, distance = event['data']
+                x, y, yaw = current_position
+                
+                # 计算扫描点坐标
+                adjusted_angle = angle - 90
+                scan_x = distance * math.cos(math.radians(adjusted_angle))
+                scan_y = -distance * math.sin(math.radians(adjusted_angle))
+                
+                rotated_x = scan_x * math.cos(math.radians(yaw)) - scan_y * math.sin(math.radians(yaw))
+                rotated_y = scan_x * math.sin(math.radians(yaw)) + scan_y * math.cos(math.radians(yaw))
+                final_x = rotated_x + x
+                final_y = rotated_y + y
+                
+                with data_lock:
+                    if distance < MAX_DETECTION_RANGE:
+                        all_scan_points.append((final_x, final_y))
+                        accumulated_scan_points.append((final_x, final_y))
+                    else:
+                        accumulated_scan_points.append((float('nan'), float('nan')))
+                    update_queue.put(True)
+                    
+            elif event['type'] == 'segment_end':
+                with data_lock:
+                    accumulated_scan_points.append((float('nan'), float('nan')))
+                    update_queue.put(True)
+            
+            # 根据实际时间间隔添加延时,将总时长缩短为原始的1/2
+            if events.index(event) < len(events) - 1:
+                next_event = events[events.index(event) + 1]
+                delay = (next_event['timestamp'] - event['timestamp']).total_seconds() / 2
+                time.sleep(delay)
+        
+        print("日志文件复现完成")
+        
+        # 持续更新图形，直到用户关闭窗口
+        while not exit_event.is_set():
+            time.sleep(0.1)
+            
+    except Exception as e:
+        error_msg = f"日志文件处理错误: {e}\n{traceback.format_exc()}"
+        print(error_msg)
+
+def read_wifi_data():
+    global current_scan_points, all_scan_points, accumulated_scan_points, car_trajectory
+    buffer = ""
+    current_segment = []
+    is_receiving_segment = False
+    
+    while not exit_event.is_set():
+        try:
+            # 从WiFi接收数据
+            data = client.recv(1024).decode('utf-8')
+            if not data:
+                print("WiFi连接已断开")
+                # 记录连接断开信息
+                with open(log_filename, 'a', encoding='utf-8') as f:
+                    f.write(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')}] 连接断开\n")
+                break
+            
+            # 记录原始数据
+            with open(log_filename, 'a', encoding='utf-8') as f:
+                f.write(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')}] 接收数据:\n{data}\n")
+                
+            buffer += data
+            
+            # 处理数据
+            while True:
+                if not is_receiving_segment:
+                    start_index = buffer.find('<START>')
+                    if start_index == -1:
+                        break
+                    
+                    buffer = buffer[start_index + len('<START>'):]
+                    is_receiving_segment = True
+                    current_segment = []
+                    # 记录数据段开始
+                    with open(log_filename, 'a', encoding='utf-8') as f:
+                        f.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')}] 开始新数据段\n")
+                    continue
+                
+                end_index = buffer.find('<END>')
+                
+                while True:
+                    line_end = buffer.find('\n')
+                    if line_end == -1:
+                        break
+                        
+                    line = buffer[:line_end].strip()
+                    buffer = buffer[line_end + 1:]
+                    
+                    # 跳过空行
+                    if not line:
+                        continue
+                    
+                    # 处理位置数据
+                    pos_match = re.match(r'POS:([-+]?\d*\.?\d+),([-+]?\d*\.?\d+),([-+]?\d*\.?\d+)', line)
+                    if pos_match:
+                        x, y, yaw = map(float, pos_match.groups())
+                        # 反转y坐标
+                        y = -y
+                        with data_lock:
+                            car_trajectory.append((x, y, yaw))
+                        # 记录解析后的位置数据
+                        with open(log_filename, 'a', encoding='utf-8') as f:
+                            f.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')}] 位置数据: x={x}, y={y}, yaw={yaw}\n")
+                    
+                    # 处理扫描数据
+                    scan_match = re.match(r'SCAN:([-+]?\d*\.?\d+),([-+]?\d*\.?\d+)', line)
+                    if scan_match:
+                        angle, distance = map(float, scan_match.groups())
+                        # 记录原始扫描数据
+                        with open(log_filename, 'a', encoding='utf-8') as f:
+                            f.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')}] 扫描数据: angle={angle}, distance={distance}\n")
+                            
+                        adjusted_angle = angle - 90
+                        scan_x = distance * math.cos(math.radians(adjusted_angle))
+                        scan_y = -distance * math.sin(math.radians(adjusted_angle))  # 反转y坐标
+                        
+                        if car_trajectory:
+                            x, y, yaw = car_trajectory[-1]  # y已经是反转后的值
+                            rotated_x = scan_x * math.cos(math.radians(yaw)) - scan_y * math.sin(math.radians(yaw))
+                            rotated_y = scan_x * math.sin(math.radians(yaw)) + scan_y * math.cos(math.radians(yaw))
+                            final_x = rotated_x + x
+                            final_y = rotated_y + y
+                            
+                            # 记录计算后的扫描点坐标
+                            with open(log_filename, 'a', encoding='utf-8') as f:
+                                f.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')}] 计算后的扫描点: x={final_x}, y={final_y}\n")
+                            
+                            with data_lock:
+                                if distance < MAX_DETECTION_RANGE:
+                                    current_segment.append((final_x, final_y))
+                                    all_scan_points.append((final_x, final_y))
+                                    accumulated_scan_points.append((final_x, final_y))
+                                else:
+                                    accumulated_scan_points.append((float('nan'), float('nan')))
+                                update_queue.put(True)
+                
+                if end_index != -1:
+                    with data_lock:
+                        accumulated_scan_points.append((float('nan'), float('nan')))
+                    
+                    # 记录数据段结束
+                    with open(log_filename, 'a', encoding='utf-8') as f:
+                        f.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')}] 数据段结束\n")
+                    
+                    buffer = buffer[end_index + len('<END>'):]
+                    is_receiving_segment = False
+                    break
+                
+                if len(buffer) > 1000:
+                    # 记录缓冲区溢出警告
+                    with open(log_filename, 'a', encoding='utf-8') as f:
+                        f.write(f"[{datetime.now().strftime('%Y-%m-d %H:%M:%S.%f')}] 警告：缓冲区溢出，清空缓冲区\n")
+                    buffer = ""
+                    is_receiving_segment = False
+                    break
+                
+                break
+
+        except Exception as e:
+            error_msg = f"WiFi数据处理错误: {e}\n{traceback.format_exc()}"
+            print(error_msg)
+            # 记录错误信息
+            with open(log_filename, 'a', encoding='utf-8') as f:
+                f.write(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')}] {error_msg}\n")
+            break
+
+    print("WiFi读取线程结束")
+    # 记录线程结束信息
+    with open(log_filename, 'a', encoding='utf-8') as f:
+        f.write(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')}] WiFi读取线程结束\n")
+    client.close()
 
 def update_plot():
     global car_indicator, scan_lines, distance_circles, distance_texts
@@ -265,196 +536,6 @@ def update_plot():
             exit_event.set()
             break
 
-def read_wifi_data():
-    global current_scan_points, all_scan_points, accumulated_scan_points, car_trajectory
-    buffer = ""
-    current_segment = []
-    is_receiving_segment = False
-    
-    while not exit_event.is_set():
-        try:
-            # 从WiFi接收数据
-            data = client.recv(1024).decode('utf-8')
-            if not data:
-                print("WiFi连接已断开")
-                # 记录连接断开信息
-                with open(log_filename, 'a', encoding='utf-8') as f:
-                    f.write(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')}] 连接断开\n")
-                break
-            
-            # 记录原始数据
-            with open(log_filename, 'a', encoding='utf-8') as f:
-                f.write(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')}] 接收数据:\n{data}\n")
-                
-            buffer += data
-            
-            # 处理数据
-            while True:
-                if not is_receiving_segment:
-                    start_index = buffer.find('<START>')
-                    if start_index == -1:
-                        break
-                    
-                    buffer = buffer[start_index + len('<START>'):]
-                    is_receiving_segment = True
-                    current_segment = []
-                    # 记录数据段开始
-                    with open(log_filename, 'a', encoding='utf-8') as f:
-                        f.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')}] 开始新数据段\n")
-                    continue
-                
-                end_index = buffer.find('<END>')
-                
-                while True:
-                    line_end = buffer.find('\n')
-                    if line_end == -1:
-                        break
-                        
-                    line = buffer[:line_end].strip()
-                    buffer = buffer[line_end + 1:]
-                    
-                    # 跳过空行
-                    if not line:
-                        continue
-                    
-                    # 处理位置数据
-                    pos_match = re.match(r'POS:([-+]?\d*\.?\d+),([-+]?\d*\.?\d+),([-+]?\d*\.?\d+)', line)
-                    if pos_match:
-                        x, y, yaw = map(float, pos_match.groups())
-                        # 反转y坐标
-                        y = -y
-                        with data_lock:
-                            car_trajectory.append((x, y, yaw))
-                        # 记录解析后的位置数据
-                        with open(log_filename, 'a', encoding='utf-8') as f:
-                            f.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')}] 位置数据: x={x}, y={y}, yaw={yaw}\n")
-                    
-                    # 处理扫描数据
-                    scan_match = re.match(r'SCAN:([-+]?\d*\.?\d+),([-+]?\d*\.?\d+)', line)
-                    if scan_match:
-                        angle, distance = map(float, scan_match.groups())
-                        # 记录原始扫描数据
-                        with open(log_filename, 'a', encoding='utf-8') as f:
-                            f.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')}] 扫描数据: angle={angle}, distance={distance}\n")
-                            
-                        adjusted_angle = angle - 90
-                        scan_x = distance * math.cos(math.radians(adjusted_angle))
-                        scan_y = -distance * math.sin(math.radians(adjusted_angle))  # 反转y坐标
-                        
-                        if car_trajectory:
-                            x, y, yaw = car_trajectory[-1]  # y已经是反转后的值
-                            rotated_x = scan_x * math.cos(math.radians(yaw)) - scan_y * math.sin(math.radians(yaw))
-                            rotated_y = scan_x * math.sin(math.radians(yaw)) + scan_y * math.cos(math.radians(yaw))
-                            final_x = rotated_x + x
-                            final_y = rotated_y + y
-                            
-                            # 记录计算后的扫描点坐标
-                            with open(log_filename, 'a', encoding='utf-8') as f:
-                                f.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')}] 计算后的扫描点: x={final_x}, y={final_y}\n")
-                            
-                            with data_lock:
-                                if distance < MAX_DETECTION_RANGE:
-                                    current_segment.append((final_x, final_y))
-                                    all_scan_points.append((final_x, final_y))
-                                    accumulated_scan_points.append((final_x, final_y))
-                                else:
-                                    accumulated_scan_points.append((float('nan'), float('nan')))
-                                update_queue.put(True)
-                
-                if end_index != -1:
-                    with data_lock:
-                        accumulated_scan_points.append((float('nan'), float('nan')))
-                    
-                    # 记录数据段结束
-                    with open(log_filename, 'a', encoding='utf-8') as f:
-                        f.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')}] 数据段结束\n")
-                    
-                    buffer = buffer[end_index + len('<END>'):]
-                    is_receiving_segment = False
-                    break
-                
-                if len(buffer) > 1000:
-                    # 记录缓冲区溢出警告
-                    with open(log_filename, 'a', encoding='utf-8') as f:
-                        f.write(f"[{datetime.now().strftime('%Y-%m-d %H:%M:%S.%f')}] 警告：缓冲区溢出，清空缓冲区\n")
-                    buffer = ""
-                    is_receiving_segment = False
-                    break
-                
-                break
-
-        except Exception as e:
-            error_msg = f"WiFi数据处理错误: {e}\n{traceback.format_exc()}"
-            print(error_msg)
-            # 记录错误信息
-            with open(log_filename, 'a', encoding='utf-8') as f:
-                f.write(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')}] {error_msg}\n")
-            break
-
-    print("WiFi读取线程结束")
-    # 记录线程结束信息
-    with open(log_filename, 'a', encoding='utf-8') as f:
-        f.write(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')}] WiFi读取线程结束\n")
-    client.close()
-
-# 添加从本地log文件读取数据的函数
-def read_log_file(log_file_path):
-    global current_scan_points, all_scan_points, accumulated_scan_points, car_trajectory
-    
-    print(f"正在从日志文件读取数据: {log_file_path}")
-    
-    try:
-        with open(log_file_path, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
-        
-        print(f"成功读取日志文件，共 {len(lines)} 行")
-        
-        # 重置数据
-        with data_lock:
-            all_scan_points = []
-            accumulated_scan_points = []
-            current_scan_points = []
-            car_trajectory = [(0, 0, 0)]  # 初始化轨迹，起始点为原点
-        
-        # 解析日志文件
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-            
-            # 解析位置数据
-            pos_pattern = r'\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+\] 位置数据: x=([-+]?\d*\.?\d+), y=([-+]?\d*\.?\d+), yaw=([-+]?\d*\.?\d+)'
-            pos_match = re.search(pos_pattern, line)
-            if pos_match:
-                x, y, yaw = map(float, pos_match.groups())
-                with data_lock:
-                    car_trajectory.append((x, y, yaw))
-                continue
-            
-            # 解析计算后的扫描点
-            scan_pattern = r'\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+\] 计算后的扫描点: x=([-+]?\d*\.?\d+), y=([-+]?\d*\.?\d+)'
-            scan_match = re.search(scan_pattern, line)
-            if scan_match:
-                x, y = map(float, scan_match.groups())
-                with data_lock:
-                    all_scan_points.append((x, y))
-                    accumulated_scan_points.append((x, y))
-                continue
-            
-            # 解析数据段结束标记
-            if '数据段结束' in line:
-                with data_lock:
-                    accumulated_scan_points.append((float('nan'), float('nan')))
-                continue
-        
-        # 通知更新图形
-        update_queue.put(True)
-        print("日志文件解析完成")
-        
-    except Exception as e:
-        error_msg = f"日志文件读取错误: {e}\n{traceback.format_exc()}"
-        print(error_msg)
-
 def on_scroll(event):
     global zoom_level, current_xlim, current_ylim
     global manual_mode
@@ -613,13 +694,13 @@ def main():
     global current_xlim, current_ylim, client
     
     # 解析命令行参数
-    parser = argparse.ArgumentParser(description='WiFi数据可视化工具')
-    parser.add_argument('--log', type=str, help='本地日志文件路径，如果提供则从日志文件读取数据而不是从WiFi')
+    parser = argparse.ArgumentParser(description='WiFi绘图工具')
+    parser.add_argument('--log', type=str, help='指定要读取的日志文件路径')
     args = parser.parse_args()
     
-    # 根据是否提供log文件路径决定数据来源
+    # 根据命令行参数决定数据来源
     if args.log:
-        # 从本地log文件读取数据
+        # 从日志文件读取数据
         log_thread = threading.Thread(target=read_log_file, args=(args.log,), daemon=True)
         log_thread.start()
     else:
@@ -629,6 +710,10 @@ def main():
             print(f"正在连接到 {HOST}:{PORT}...")
             client.connect((HOST, PORT))
             print("WiFi连接成功！")
+            
+            # 创建并启动WiFi数据读取线程
+            wifi_thread = threading.Thread(target=read_wifi_data, daemon=True)
+            wifi_thread.start()
         except socket.error as e:
             print(f"无法连接到WiFi服务器。错误信息: {e}")
             print("请检查:")
@@ -636,10 +721,6 @@ def main():
             print("2. IP地址和端口是否正确")
             print("3. ESP32是否正常工作")
             sys.exit(1)
-            
-        # 创建并启动WiFi数据读取线程
-        wifi_thread = threading.Thread(target=read_wifi_data, daemon=True)
-        wifi_thread.start()
 
     # 连接窗口关闭事件
     fig.canvas.mpl_connect('close_event', lambda event: exit_event.set())
@@ -674,4 +755,4 @@ def main():
         sys.exit(0)
 
 if __name__ == "__main__":
-    main() 
+    main()
