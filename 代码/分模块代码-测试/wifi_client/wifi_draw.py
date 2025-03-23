@@ -429,6 +429,21 @@ def read_wifi_data():
         f.write(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')}] WiFi读取线程结束\n")
     client.close()
 
+# 添加计算两点之间距离的函数
+def calculate_distance(p1, p2):
+    """
+    计算两点之间的距离
+    
+    Args:
+        p1: 第一个点的坐标元组 (x1, y1)
+        p2: 第二个点的坐标元组 (x2, y2)
+    
+    Returns:
+        两点之间的欧氏距离
+    """
+    return math.sqrt((p2[0] - p1[0])**2 + (p2[1] - p1[1])**2)
+
+# 在update_plot函数中修改点连线的逻辑部分
 def update_plot():
     global car_indicator, scan_lines, distance_circles, distance_texts
     global zoom_level, current_xlim, current_ylim, manual_mode
@@ -459,17 +474,40 @@ def update_plot():
                 current_segment = []
                 points_to_draw = filtered_points if filtered_points else accumulated_scan_points
                 
-                for point in points_to_draw:
-                    if not (math.isnan(point[0]) or math.isnan(point[1])):
-                        current_segment.append(point)
-                    else:
+                # 设置断开连线的阈值(厘米)
+                DISTANCE_THRESHOLD = 7.0
+                
+                for i, point in enumerate(points_to_draw):
+                    if math.isnan(point[0]) or math.isnan(point[1]):
+                        # 如果当前点是NaN,结束当前线段
                         if current_segment:
                             x_points, y_points = zip(*current_segment)
                             line, = ax.plot(x_points, y_points, 'b-', linewidth=1)
                             scan_lines.append(line)
                             current_segment = []
+                        continue
+                    
+                    if not current_segment:
+                        # 如果是新的线段,直接添加点
+                        current_segment.append(point)
+                    else:
+                        # 计算与前一个点的距离
+                        prev_point = current_segment[-1]
+                        distance = calculate_distance(prev_point, point)
+                        
+                        if distance > DISTANCE_THRESHOLD:
+                            # 如果距离超过阈值,结束当前线段并开始新的线段
+                            if len(current_segment) > 1:  # 确保至少有两个点才绘制线段
+                                x_points, y_points = zip(*current_segment)
+                                line, = ax.plot(x_points, y_points, 'b-', linewidth=1)
+                                scan_lines.append(line)
+                            current_segment = [point]  # 开始新的线段
+                        else:
+                            # 距离在阈值内,继续当前线段
+                            current_segment.append(point)
                 
-                if current_segment:
+                # 处理最后一个线段
+                if current_segment and len(current_segment) > 1:
                     x_points, y_points = zip(*current_segment)
                     line, = ax.plot(x_points, y_points, 'b-', linewidth=1)
                     scan_lines.append(line)
