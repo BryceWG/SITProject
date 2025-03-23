@@ -108,6 +108,11 @@ car_x = 0.0
 car_y = 0.0
 car_yaw = 0.0
 
+# 滤波器参数
+FILTER_WINDOW_SIZE = 8  # 滑动窗口大小
+filtered_points = []  # 存储滤波后的点
+raw_points_buffer = []  # 原始点缓存
+
 def read_log_file(log_path):
     """
     从本地日志文件读取数据并进行处理
@@ -251,8 +256,45 @@ def read_log_file(log_path):
         error_msg = f"日志文件处理错误: {e}\n{traceback.format_exc()}"
         print(error_msg)
 
+def apply_moving_average_filter(points, window_size):
+    """
+    对点集应用滑动窗口平均滤波
+    
+    Args:
+        points: 原始点集列表，每个元素为(x, y)元组
+        window_size: 滑动窗口大小
+        
+    Returns:
+        filtered_points: 滤波后的点集列表
+    """
+    if len(points) < window_size:
+        return points
+        
+    filtered = []
+    valid_points = [(x, y) for x, y in points if not (math.isnan(x) or math.isnan(y))]
+    
+    for i in range(len(valid_points)):
+        # 获取当前窗口内的点
+        start_idx = max(0, i - window_size // 2)
+        end_idx = min(len(valid_points), i + window_size // 2 + 1)
+        window = valid_points[start_idx:end_idx]
+        
+        if not window:
+            continue
+            
+        # 计算窗口内点的平均位置
+        x_sum = sum(p[0] for p in window)
+        y_sum = sum(p[1] for p in window)
+        x_avg = x_sum / len(window)
+        y_avg = y_sum / len(window)
+        
+        filtered.append((x_avg, y_avg))
+    
+    return filtered
+
 def read_wifi_data():
     global current_scan_points, all_scan_points, accumulated_scan_points, car_trajectory
+    global raw_points_buffer, filtered_points
     buffer = ""
     current_segment = []
     is_receiving_segment = False
@@ -263,9 +305,6 @@ def read_wifi_data():
             data = client.recv(1024).decode('utf-8')
             if not data:
                 print("WiFi连接已断开")
-                # 记录连接断开信息
-                with open(log_filename, 'a', encoding='utf-8') as f:
-                    f.write(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')}] 连接断开\n")
                 break
             
             # 记录原始数据
@@ -340,7 +379,14 @@ def read_wifi_data():
                             
                             with data_lock:
                                 if distance < MAX_DETECTION_RANGE:
-                                    current_segment.append((final_x, final_y))
+                                    # 添加原始点到缓存
+                                    raw_points_buffer.append((final_x, final_y))
+                                    # 当缓存达到窗口大小时进行滤波
+                                    if len(raw_points_buffer) >= FILTER_WINDOW_SIZE:
+                                        filtered = apply_moving_average_filter(raw_points_buffer, FILTER_WINDOW_SIZE)
+                                        filtered_points.extend(filtered)
+                                        raw_points_buffer = raw_points_buffer[len(filtered):]
+                                        
                                     all_scan_points.append((final_x, final_y))
                                     accumulated_scan_points.append((final_x, final_y))
                                 else:
@@ -398,38 +444,35 @@ def update_plot():
                 pass  # Timeout, proceed to update
 
             with data_lock:
-                # 更新所有扫描点
-                if all_scan_points:
-                    # 过滤掉无效点（NaN）
-                    valid_points = [(x, y) for x, y in all_scan_points if not (math.isnan(x) or math.isnan(y))]
-                    if valid_points:
-                        x_points, y_points = zip(*valid_points)
-                        scan_points_plot.set_data(x_points, y_points)
-                    else:
-                        scan_points_plot.set_data([], [])
+                # 更新所有扫描点,使用滤波后的点
+                if filtered_points:
+                    x_points, y_points = zip(*filtered_points)
+                    scan_points_plot.set_data(x_points, y_points)
+                else:
+                    scan_points_plot.set_data([], [])
 
                 # 更新累积的扫描线
-                if accumulated_scan_points:
-                    # 移除旧的扫描线
-                    for line in scan_lines:
-                        line.remove()
-                    scan_lines.clear()
+                for line in scan_lines:
+                    line.remove()
+                scan_lines.clear()
 
-                    # 绘制新的扫描线
-                    current_segment = []
-                    for point in accumulated_scan_points:
-                        if math.isnan(point[0]) or math.isnan(point[1]):
-                            if current_segment:
-                                x_points, y_points = zip(*current_segment)
-                                line, = ax.plot(x_points, y_points, 'b-', linewidth=1)
-                                scan_lines.append(line)
-                                current_segment = []
-                        else:
-                            current_segment.append(point)
-                    if current_segment:
-                        x_points, y_points = zip(*current_segment)
-                        line, = ax.plot(x_points, y_points, 'b-', linewidth=1)
-                        scan_lines.append(line)
+                current_segment = []
+                points_to_draw = filtered_points if filtered_points else accumulated_scan_points
+                
+                for point in points_to_draw:
+                    if not (math.isnan(point[0]) or math.isnan(point[1])):
+                        current_segment.append(point)
+                    else:
+                        if current_segment:
+                            x_points, y_points = zip(*current_segment)
+                            line, = ax.plot(x_points, y_points, 'b-', linewidth=1)
+                            scan_lines.append(line)
+                            current_segment = []
+                
+                if current_segment:
+                    x_points, y_points = zip(*current_segment)
+                    line, = ax.plot(x_points, y_points, 'b-', linewidth=1)
+                    scan_lines.append(line)
 
                 # 更新小车轨迹
                 if car_trajectory:
@@ -657,7 +700,7 @@ def toggle_mode(event):
                 y_points = [p[1] for p in all_points if not math.isnan(p[1])]
                 if x_points and y_points:
                     x_min, x_max = min(x_points), max(x_points)
-                    y_min, y_max = min(y_points), max(y_points)
+                    y_min, y_max = min(y_points)
 
                     # 确保坐标轴范围包含原点
                     x_min, x_max = min(x_min, 0), max(x_max, 0)
